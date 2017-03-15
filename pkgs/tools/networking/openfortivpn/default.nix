@@ -1,9 +1,9 @@
-{ stdenv, fetchFromGitHub, automake, autoconf, openssl, ppp }:
+{ stdenv, fetchFromGitHub, autoreconfHook, openssl, ppp }:
 
 with stdenv.lib;
 
 let repo = "openfortivpn";
-    version = "1.1.4";
+    version = "1.2.0";
 
 in stdenv.mkDerivation {
   name = "${repo}-${version}";
@@ -12,16 +12,14 @@ in stdenv.mkDerivation {
     owner = "adrienverge";
     inherit repo;
     rev = "v${version}";
-    sha256 = "08ycz053wa29ckgr93132hr3vrd84r3bks9q807qanri0n35y256";
+    sha256 = "1a1l9f6zivfyxg9g2x7kzkvcyh84s7l6v0kimihhrd19zl0m41jn";
   };
 
-  buildInputs = [ openssl automake autoconf ppp ];
+  buildInputs = [ openssl ppp autoreconfHook ];
+
+  NIX_CFLAGS_COMPILE = "-Wno-error=unused-function";
 
   preConfigure = ''
-    aclocal
-    autoconf
-    automake --add-missing
-
     substituteInPlace src/tunnel.c --replace "/usr/sbin/pppd" "${ppp}/bin/pppd"
   '';
 

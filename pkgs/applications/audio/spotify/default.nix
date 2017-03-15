@@ -1,11 +1,14 @@
 { fetchurl, stdenv, dpkg, xorg, alsaLib, makeWrapper, openssl, freetype
-, glib, pango, cairo, atk, gdk_pixbuf, gtk, cups, nspr, nss, libpng, GConf
-, libgcrypt, libudev, fontconfig, dbus, expat, ffmpeg_0_10, curl, zlib, gnome }:
+, glib, pango, cairo, atk, gdk_pixbuf, gtk2, cups, nspr, nss, libpng, GConf
+, libgcrypt, systemd, fontconfig, dbus, expat, ffmpeg_0_10, curl, zlib, gnome2 }:
 
 assert stdenv.system == "x86_64-linux";
 
 let
-  version = "1.0.34.146.g28f9eda2-19";
+  # Please update the stable branch!
+  # Latest version number can be found at:
+  # http://repository-origin.spotify.com/pool/non-free/s/spotify-client/
+  version = "1.0.49.125.g72ee7853-111";
 
   deps = [
     alsaLib
@@ -21,13 +24,13 @@ let
     GConf
     gdk_pixbuf
     glib
-    gtk
+    gtk2
     libgcrypt
     libpng
     nss
     pango
     stdenv.cc.cc
-    libudev
+    systemd
     xorg.libX11
     xorg.libXcomposite
     xorg.libXcursor
@@ -49,21 +52,28 @@ stdenv.mkDerivation {
 
   src =
     fetchurl {
-      url = "http://repository-origin.spotify.com/pool/non-free/s/spotify-client/spotify-client_${version}_amd64.deb";
-      sha256 = "1pks9b83aj6y3c3jlmll0rs05yk15r49v0v4amm950z68v182a5g";
+      url = "https://repository-origin.spotify.com/pool/non-free/s/spotify-client/spotify-client_${version}_amd64.deb";
+      sha256 = "0l008x06d257vcw6gq3q90hvv93cq6mxpj11by1np6bzzg61qv8x";
     };
 
   buildInputs = [ dpkg makeWrapper ];
 
-  unpackPhase = "true";
+  unpackPhase = ''
+    runHook preUnpack
+    dpkg-deb -x $src .
+    runHook postUnpack
+  '';
+
+  configurePhase = "runHook preConfigure; runHook postConfigure";
+  buildPhase = "runHook preBuild; runHook postBuild";
 
   installPhase =
     ''
+      runHook preInstall
+
       libdir=$out/lib/spotify
       mkdir -p $libdir
-      dpkg-deb -x $src $out
-      mv $out/usr/* $out/
-      rm -rf $out/usr
+      mv ./usr/* $out/
 
       # Work around Spotify referring to a specific minor version of
       # OpenSSL.
@@ -82,7 +92,7 @@ stdenv.mkDerivation {
       librarypath="${stdenv.lib.makeLibraryPath deps}:$libdir"
       wrapProgram $out/share/spotify/spotify \
         --prefix LD_LIBRARY_PATH : "$librarypath" \
-        --prefix PATH : "${gnome.zenity}/bin"
+        --prefix PATH : "${gnome2.zenity}/bin"
 
       # Desktop file
       mkdir -p "$out/share/applications/"
@@ -95,6 +105,8 @@ stdenv.mkDerivation {
         ln -s "$out/share/spotify/icons/spotify-linux-$i.png" \
           "$out/share/icons/hicolor/$ixi/apps/spotify-client.png"
       done
+
+      runHook postInstall
     '';
 
   dontStrip = true;

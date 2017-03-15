@@ -1,5 +1,5 @@
 { stdenv, fetchurl, fetchgit, fetchzip, file, python2, tzdata, procps
-, llvm, jemalloc, ncurses, darwin, binutils, rustPlatform, git
+, llvm, jemalloc, ncurses, darwin, binutils, rustPlatform, git, cmake, curl
 
 , isRelease ? false
 , shortVersion
@@ -13,36 +13,37 @@
 } @ args:
 
 let
-    version = if isRelease then
-        "${shortVersion}"
-      else
-        "${shortVersion}-g${builtins.substring 0 7 srcRev}";
+  inherit (stdenv.lib) optional optionalString;
 
-    name = "rustc-${version}";
+  version = if isRelease then
+      "${shortVersion}"
+    else
+      "${shortVersion}-g${builtins.substring 0 7 srcRev}";
 
-    procps = if stdenv.isDarwin then darwin.ps else args.procps;
+  procps = if stdenv.isDarwin then darwin.ps else args.procps;
 
-    llvmShared = llvm.override { enableSharedLibraries = true; };
+  llvmShared = llvm.override { enableSharedLibraries = true; };
 
-    target = builtins.replaceStrings [" "] [","] (builtins.toString targets);
+  target = builtins.replaceStrings [" "] [","] (builtins.toString targets);
 
-    meta = with stdenv.lib; {
-      homepage = http://www.rust-lang.org/;
-      description = "A safe, concurrent, practical language";
-      maintainers = with maintainers; [ madjar cstrahan wizeman globin havvy wkennington retrry ];
-      license = [ licenses.mit licenses.asl20 ];
-      platforms = platforms.linux ++ platforms.darwin;
-    };
 in
 
 stdenv.mkDerivation {
-  inherit name;
+  name = "rustc-${version}";
   inherit version;
-  inherit meta;
 
   __impureHostDeps = [ "/usr/lib/libedit.3.dylib" ];
 
-  NIX_LDFLAGS = stdenv.lib.optionalString stdenv.isDarwin "-rpath ${llvmShared}/lib";
+  NIX_LDFLAGS = optionalString stdenv.isDarwin "-rpath ${llvmShared}/lib";
+
+  # Enable nightly features in stable compiles (used for
+  # bootstrapping, see https://github.com/rust-lang/rust/pull/37265).
+  # This loosens the hard restrictions on bootstrapping-compiler
+  # versions.
+  RUSTC_BOOTSTRAP = "1";
+
+  # Increase codegen units to introduce parallelism within the compiler.
+  RUSTFLAGS = "-Ccodegen-units=10";
 
   src = fetchgit {
     url = https://github.com/rust-lang/rust;
@@ -55,11 +56,14 @@ stdenv.mkDerivation {
                 ++ [ "--enable-local-rust" "--local-rust-root=${rustPlatform.rust.rustc}" "--enable-rpath" ]
                 # ++ [ "--jemalloc-root=${jemalloc}/lib"
                 ++ [ "--default-linker=${stdenv.cc}/bin/cc" "--default-ar=${binutils.out}/bin/ar" ]
-                ++ stdenv.lib.optional (stdenv.cc.cc ? isClang) "--enable-clang"
-                ++ stdenv.lib.optional (targets != []) "--target=${target}"
-                ++ stdenv.lib.optional (!forceBundledLLVM) "--llvm-root=${llvmShared}";
+                # TODO: Remove when fixed build with rustbuild
+                ++ [ "--disable-rustbuild" ]
+                ++ optional (stdenv.cc.cc ? isClang) "--enable-clang"
+                ++ optional (targets != []) "--target=${target}"
+                ++ optional (!forceBundledLLVM) "--llvm-root=${llvmShared}";
 
   patches = patches ++ targetPatches;
+
   passthru.target = target;
 
   postPatch = ''
@@ -73,19 +77,36 @@ stdenv.mkDerivation {
       --replace "\$\$(subst  /,//," "\$\$(subst /,/,"
 
     # Fix dynamic linking against llvm
-    ${stdenv.lib.optionalString (!forceBundledLLVM) ''sed -i 's/, kind = \\"static\\"//g' src/etc/mklldeps.py''}
+    ${optionalString (!forceBundledLLVM) ''sed -i 's/, kind = \\"static\\"//g' src/etc/mklldeps.py''}
 
     # Fix the configure script to not require curl as we won't use it
     sed -i configure \
-      -e '/probe_need CFG_CURLORWGET/d'
+      -e '/probe_need CFG_CURL curl/d'
 
     # Fix the use of jemalloc prefixes which our jemalloc doesn't have
     # TODO: reenable if we can figure out how to get our jemalloc to work
     #[ -f src/liballoc_jemalloc/lib.rs ] && sed -i 's,je_,,g' src/liballoc_jemalloc/lib.rs
     #[ -f src/liballoc/heap.rs ] && sed -i 's,je_,,g' src/liballoc/heap.rs # Remove for 1.4.0+
 
+    # Disable fragile linker-output-non-utf8 test
+    rm -vr src/test/run-make/linker-output-non-utf8 || true
+
+    # Remove test targeted at LLVM 3.9 - https://github.com/rust-lang/rust/issues/36835
+    rm -vr src/test/run-pass/issue-36023.rs || true
+
+    # Disable test getting stuck on hydra - possible fix:
+    # https://reviews.llvm.org/rL281650
+    rm -vr src/test/run-pass/issue-36474.rs || true
+
     # Useful debugging parameter
-    #export VERBOSE=1
+    # export VERBOSE=1
+  '' +
+  # In src/compiler-rt/cmake/config-ix.cmake, the cmake build falls
+  # back to darwin 10.4. This causes the OS name to be recorded as
+  # "10.4" rather than the expected "osx". But mk/rt.mk expects the
+  # built library name to have an "_osx" suffix on darwin.
+  optionalString stdenv.isDarwin ''
+    substituteInPlace mk/rt.mk --replace "_osx" "_10.4"
   '';
 
   preConfigure = ''
@@ -94,19 +115,44 @@ stdenv.mkDerivation {
     configureFlagsArray+=("--infodir=$out/share/info")
   '';
 
-  # ps is needed for one of the test cases
-  nativeBuildInputs = [ file python2 procps rustPlatform.rust.rustc git ];
-  buildInputs = [ ncurses ] ++ targetToolchains
-    ++ stdenv.lib.optional (!forceBundledLLVM) llvmShared;
+  # rustc unfortunately need cmake for compiling llvm-rt but doesn't
+  # use it for the normal build. This disables cmake in Nix.
+  dontUseCmakeConfigure = true;
 
-  # https://github.com/rust-lang/rust/issues/30181
-  # enableParallelBuilding = false; # missing files during linking, occasionally
+  # ps is needed for one of the test cases
+  nativeBuildInputs = [ file python2 procps rustPlatform.rust.rustc git cmake ];
+
+  buildInputs = [ ncurses ] ++ targetToolchains
+    ++ optional (!forceBundledLLVM) llvmShared;
 
   outputs = [ "out" "doc" ];
   setOutputFlags = false;
 
-  preCheck = "export TZDIR=${tzdata}/share/zoneinfo";
+  # Disable codegen units for the tests.
+  preCheck = ''
+    export RUSTFLAGS=
+    export TZDIR=${tzdata}/share/zoneinfo
+  '' +
+  # Ensure TMPDIR is set, and disable a test that removing the HOME
+  # variable from the environment falls back to another home
+  # directory.
+  optionalString stdenv.isDarwin ''
+    export TMPDIR=/tmp
+    sed -i '28s/home_dir().is_some()/true/' ./src/test/run-pass/env-home-dir.rs
+  '';
 
   doCheck = true;
   dontSetConfigureCross = true;
+
+  # https://github.com/NixOS/nixpkgs/pull/21742#issuecomment-272305764
+  # https://github.com/rust-lang/rust/issues/30181
+  # enableParallelBuilding = false;
+
+  meta = with stdenv.lib; {
+    homepage = http://www.rust-lang.org/;
+    description = "A safe, concurrent, practical language";
+    maintainers = with maintainers; [ madjar cstrahan wizeman globin havvy wkennington retrry ];
+    license = [ licenses.mit licenses.asl20 ];
+    platforms = platforms.linux ++ platforms.darwin;
+  };
 }

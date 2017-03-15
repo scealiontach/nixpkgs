@@ -22,9 +22,16 @@ stdenv.mkDerivation rec {
     substituteInPlace ./criu/Makefile --replace "-I/usr/include/libnl3" "-I${libnl.dev}/include/libnl3"
     substituteInPlace ./Makefile --replace "tar-name := $(shell git tag -l v$(CRIU_VERSION))" "tar-name = 2.0" # --replace "-Werror" ""
     ln -sf ${protobuf}/include/google/protobuf/descriptor.proto ./images/google/protobuf/descriptor.proto
+
+    # Avoid a glibc >= 2.25 deprecation warning that gets fatal via -Werror.
+    sed 1i'#include <sys/sysmacros.h>' -i criu/include/util.h
   '';
 
-  buildPhase     = "make PREFIX=$out";
+  buildPhase = "make PREFIX=$out";
+
+  makeFlags = "PREFIX=$(out)";
+
+  hardeningDisable = [ "stackprotector" ];
 
   installPhase = ''
     mkdir -p $out/etc/logrotate.d

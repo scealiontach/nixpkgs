@@ -1,4 +1,4 @@
-{ stdenv, lib, fetchurl, tzdata, iana_etc, go_1_4, runCommand
+{ stdenv, lib, fetchurl, tzdata, iana_etc, go_bootstrap, runCommand
 , perl, which, pkgconfig, patch, fetchpatch
 , pcre
 , Security, Foundation, bash }:
@@ -6,7 +6,7 @@
 let
   goBootstrap = runCommand "go-bootstrap" {} ''
     mkdir $out
-    cp -rf ${go_1_4}/* $out/
+    cp -rf ${go_bootstrap}/* $out/
     chmod -R u+w $out
     find $out -name "*.c" -delete
     cp -rf $out/bin/* $out/share/go/bin/
@@ -15,11 +15,11 @@ in
 
 stdenv.mkDerivation rec {
   name = "go-${version}";
-  version = "1.6.2";
+  version = "1.6.4";
 
   src = fetchurl {
     url = "https://github.com/golang/go/archive/go${version}.tar.gz";
-    sha256 = "17sfhg3xfnakk666wlsbhxp4vbn19hlywf5cn1zfcd4zqkcyx30h";
+    sha256 = "1212pijypippg3sq9c9645kskq4ib73y1f8cv0ka6n279smk0mq9";
   };
 
   # perl is used for testing go vet
@@ -28,6 +28,8 @@ stdenv.mkDerivation rec {
   propagatedBuildInputs = lib.optionals stdenv.isDarwin [
     Security Foundation
   ];
+
+  hardeningDisable = [ "all" ];
 
   # I'm not sure what go wants from its 'src', but the go installation manual
   # describes an installation keeping the src.
@@ -70,6 +72,8 @@ stdenv.mkDerivation rec {
     sed -i '/src\/cmd\/api\/run.go/ireturn nil' src/cmd/dist/test.go
     # Remove the coverage test as we have removed this utility
     sed -i '/TestCoverageWithCgo/areturn' src/cmd/go/go_test.go
+    # Remove the timezone naming test
+    sed -i '/TestLoadFixed/areturn' src/time/time_test.go
 
     sed -i 's,/etc/protocols,${iana_etc}/etc/protocols,' src/net/lookup_unix.go
     sed -i 's,/etc/services,${iana_etc}/etc/services,' src/net/port_unix.go
@@ -85,7 +89,7 @@ stdenv.mkDerivation rec {
     sed -i '/TestChdirAndGetwd/areturn' src/os/os_test.go
     sed -i '/TestRead0/areturn' src/os/os_test.go
     sed -i '/TestNohup/areturn' src/os/signal/signal_test.go
-    sed -i '/TestSystemRoots/areturn' src/crypto/x509/root_darwin_test.go
+    rm src/crypto/x509/root_darwin_test.go src/crypto/x509/verify_test.go
 
     sed -i '/TestGoInstallRebuildsStalePackagesInOtherGOPATH/areturn' src/cmd/go/go_test.go
     sed -i '/TestBuildDashIInstallsDependencies/areturn' src/cmd/go/go_test.go
@@ -108,6 +112,7 @@ stdenv.mkDerivation rec {
 
   patches = [
     ./remove-tools-1.5.patch
+    ./creds-test.patch
   ];
 
   GOOS = if stdenv.isDarwin then "darwin" else "linux";
@@ -141,7 +146,7 @@ stdenv.mkDerivation rec {
 
   setupHook = ./setup-hook.sh;
 
-  disallowedReferences = [ go_1_4 ];
+  disallowedReferences = [ go_bootstrap ];
 
   meta = with stdenv.lib; {
     branch = "1.6";

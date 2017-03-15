@@ -1,5 +1,5 @@
 # This module declares the options to define a *display manager*, the
-# program responsible for handling X logins (such as xdm, kdm, gdb, or
+# program responsible for handling X logins (such as xdm, gdb, or
 # SLiM).  The display manager allows the user to select a *session
 # type*.  When the user logs in, the display manager starts the
 # *session script* ("xsession" below) to launch the selected session
@@ -32,6 +32,9 @@ let
     ''
       #! ${pkgs.bash}/bin/bash
 
+      # Handle being called by SDDM.
+      if test "''${1:0:1}" = / ; then eval exec $1 $2 ; fi
+
       ${optionalString cfg.displayManager.logToJournal ''
         if [ -z "$_DID_SYSTEMD_CAT" ]; then
           _DID_SYSTEMD_CAT=1 exec ${config.systemd.package}/bin/systemd-cat -t xsession -- "$0" "$@"
@@ -54,9 +57,6 @@ let
           exec ${pkgs.dbus.dbus-launch} --exit-with-session "$0" "$sessionType"
         fi
       ''}
-
-      # Handle being called by kdm.
-      if test "''${1:0:1}" = /; then eval exec "$1"; fi
 
       # Start PulseAudio if enabled.
       ${optionalString (config.hardware.pulseaudio.enable) ''
@@ -82,12 +82,12 @@ let
 
       # Speed up application start by 50-150ms according to
       # http://kdemonkey.blogspot.nl/2008/04/magic-trick.html
-      rm -rf $HOME/.compose-cache
-      mkdir $HOME/.compose-cache
+      rm -rf "$HOME/.compose-cache"
+      mkdir "$HOME/.compose-cache"
 
       # Work around KDE errors when a user first logs in and
       # .local/share doesn't exist yet.
-      mkdir -p $HOME/.local/share
+      mkdir -p "$HOME/.local/share"
 
       unset _DID_SYSTEMD_CAT
 
@@ -134,12 +134,8 @@ let
         (*) echo "$0: Desktop manager '$desktopManager' not found.";;
       esac
 
-      ${optionalString (cfg.startDbusSession && cfg.updateDbusEnvironment) ''
-        ${pkgs.glib}/bin/gdbus call --session \
-          --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
-          --method org.freedesktop.DBus.UpdateActivationEnvironment \
-          "{$(env | ${pkgs.gnused}/bin/sed "s/'/\\\\'/g; s/\([^=]*\)=\(.*\)/'\1':'\2'/" \
-                  | ${pkgs.coreutils}/bin/paste -sd,)}"
+      ${optionalString cfg.updateDbusEnvironment ''
+        ${lib.getBin pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all
       ''}
 
       test -n "$waitPID" && wait "$waitPID"
@@ -152,7 +148,7 @@ let
       allowSubstitutes = false;
     }
     ''
-      mkdir -p $out
+      mkdir -p "$out"
       ${concatMapStrings (n: ''
         cat - > "$out/${n}.desktop" << EODESKTOP
         [Desktop Entry]
@@ -191,7 +187,6 @@ in
         default = [];
         example = [ "-ac" "-logverbose" "-verbose" "-nolisten tcp" ];
         description = "List of arguments for the X server.";
-        apply = toString;
       };
 
       sessionCommands = mkOption {
@@ -305,7 +300,8 @@ in
   };
 
   imports = [
-   (mkRemovedOptionModule [ "services" "xserver" "displayManager" "desktopManagerHandlesLidAndPower" ])
+   (mkRemovedOptionModule [ "services" "xserver" "displayManager" "desktopManagerHandlesLidAndPower" ]
+     "The option is no longer necessary because all display managers have already delegated lid management to systemd.")
   ];
 
 }

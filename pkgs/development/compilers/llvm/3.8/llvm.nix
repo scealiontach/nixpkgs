@@ -14,11 +14,11 @@
 , compiler-rt_src
 , libcxxabi
 , debugVersion ? false
-, enableSharedLibraries ? !stdenv.isDarwin
+, enableSharedLibraries ? true
 }:
 
 let
-  src = fetch "llvm" "0ikfq0gxac8xpvxj23l4hk8f12ydx48fljgrz1gl9xp0ks704nsm";
+  src = fetch "llvm" "1ybmnid4pw2hxn12ax5qa5kl1ldfns0njg8533y3mzslvd5cx0kf";
 in stdenv.mkDerivation rec {
   name = "llvm-${version}";
 
@@ -35,10 +35,14 @@ in stdenv.mkDerivation rec {
 
   propagatedBuildInputs = [ ncurses zlib ];
 
+  # Fix a segfault in llc
+  # See http://lists.llvm.org/pipermail/llvm-dev/2016-October/106500.html
+  patches = [ ./D17533-1.patch ];
+
   # hacky fix: New LLVM releases require a newer OS X SDK than
   # 10.9. This is a temporary measure until nixpkgs darwin support is
   # updated.
-  patchPhase = stdenv.lib.optionalString stdenv.isDarwin ''
+  postPatch = stdenv.lib.optionalString stdenv.isDarwin ''
         sed -i 's/os_trace(\(.*\)");$/printf(\1\\n");/g' ./projects/compiler-rt/lib/sanitizer_common/sanitizer_mac.cc
   '';
 
@@ -69,6 +73,11 @@ in stdenv.mkDerivation rec {
     paxmark m bin/{lli,llvm-rtdyld}
   '';
 
+  postInstall = stdenv.lib.optionalString (stdenv.isDarwin && enableSharedLibraries) ''
+    install_name_tool -id $out/lib/libLLVM.dylib $out/lib/libLLVM.dylib
+    ln -s $out/lib/libLLVM.dylib $out/lib/libLLVM-${version}.dylib
+  '';
+
   enableParallelBuilding = true;
 
   passthru.src = src;
@@ -76,7 +85,7 @@ in stdenv.mkDerivation rec {
   meta = {
     description = "Collection of modular and reusable compiler and toolchain technologies";
     homepage    = http://llvm.org/;
-    license     = stdenv.lib.licenses.bsd3;
+    license     = stdenv.lib.licenses.ncsa;
     maintainers = with stdenv.lib.maintainers; [ lovek323 raskin viric ];
     platforms   = stdenv.lib.platforms.all;
   };

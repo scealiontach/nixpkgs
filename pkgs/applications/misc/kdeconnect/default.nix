@@ -16,11 +16,11 @@
 
 stdenv.mkDerivation rec {
   name = "kdeconnect-${version}";
-  version = "0.9g";
+  version = "1.0.3";
 
   src = fetchurl {
-    url = http://download.kde.org/unstable/kdeconnect/0.9/src/kdeconnect-kde-0.9g.tar.xz;
-    sha256 = "4033754057bbc993b1d4350959afbe1d17a4f1e56dd60c6df6abca5a321ee1b8";
+    url = "http://download.kde.org/stable/kdeconnect/${version}/src/kdeconnect-kde-${version}.tar.xz";
+    sha256 = "0b40402adw7cqz19fh8zw70f6l7b5p400mw668n3wic4favn27r2";
   };
 
   buildInputs = [

@@ -13,6 +13,9 @@ let
     auth_unix_rw = "none"
     ${cfg.extraConfig}
   '';
+  qemuConfigFile = pkgs.writeText "qemu.conf" ''
+    ${cfg.qemuVerbatimConfig}
+  '';
 
 in {
 
@@ -45,6 +48,18 @@ in {
       description = ''
         Extra contents appended to the libvirtd configuration file,
         libvirtd.conf.
+      '';
+    };
+
+    virtualisation.libvirtd.qemuVerbatimConfig = mkOption {
+      type = types.lines;
+      default = ''
+        namespaces = []
+      '';
+      description = ''
+        Contents written to the qemu configuration file, qemu.conf.
+        Make sure to include a proper namespace configuration when
+        supplying custom configuration.
       '';
     };
 
@@ -119,11 +134,14 @@ in {
             cp -npd ${pkgs.libvirt}/var/lib/$i /var/lib/$i
         done
 
+        # Copy generated qemu config to libvirt directory
+        cp -f ${qemuConfigFile} /var/lib/libvirt/qemu.conf
+
         # libvirtd puts the full path of the emulator binary in the machine
         # config file. But this path can unfortunately be garbage collected
         # while still being used by the virtual machine. So update the
         # emulator path on each startup to something valid (re-scan $PATH).
-        for file in /etc/libvirt/qemu/*.xml /etc/libvirt/lxc/*.xml; do
+        for file in /var/lib/libvirt/qemu/*.xml /var/lib/libvirt/lxc/*.xml; do
             test -f "$file" || continue
             # get (old) emulator path from config file
             emulator=$(grep "^[[:space:]]*<emulator>" "$file" | sed 's,^[[:space:]]*<emulator>\(.*\)</emulator>.*,\1,')

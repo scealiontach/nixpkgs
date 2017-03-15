@@ -9,13 +9,11 @@ let
   env = bundlerEnv {
     name = "gitlab";
     inherit ruby;
-    gemfile = ./Gemfile;
-    lockfile = ./Gemfile.lock;
-    gemset = ./gemset.nix;
+    gemdir = ./.;
     meta = with lib; {
       homepage = http://www.gitlab.com/;
       platforms = platforms.linux;
-      maintainers = [ ];
+      maintainers = with maintainers; [ fpletz ];
       license = licenses.mit;
     };
   };
@@ -24,7 +22,7 @@ in
 
 stdenv.mkDerivation rec {
   name = "gitlab-${version}";
-  version = "8.10.3";
+  version = "8.16.6";
 
   buildInputs = [ env ruby bundler tzdata git nodejs procps ];
 
@@ -32,7 +30,7 @@ stdenv.mkDerivation rec {
     owner = "gitlabhq";
     repo = "gitlabhq";
     rev = "v${version}";
-    sha256 = "0fhnwrgrpccc2j9wgdmwwi9h1ym3ll97lhmddq0xfzivc302ri3w";
+    sha256 = "03rzms2frwx4c09l2rig1amlxj965s2iq421i52j8wj2khb7pd7g";
   };
 
   patches = [
@@ -70,6 +68,7 @@ stdenv.mkDerivation rec {
       SKIP_STORAGE_VALIDATION=true \
       rake assets:precompile RAILS_ENV=production
     mv config/gitlab.yml config/gitlab.yml.example
+    rm config/secrets.yml
     mv config config.dist
   '';
 

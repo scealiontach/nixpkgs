@@ -21,6 +21,8 @@ stdenv.mkDerivation rec {
     mimeType = "application/x-pharo-image";
   };
 
+  hardeningDisable = [ "format" ];
+
   # Building
   preConfigure = ''
     cd build/
@@ -87,7 +89,7 @@ stdenv.mkDerivation rec {
     '';
     homepage = http://pharo.org;
     license = stdenv.lib.licenses.mit;
-    maintainers = [ stdenv.lib.maintainers.DamienCassou ];
+    maintainers = [ ];
     # Pharo VM sources are packaged separately for darwin (OS X)
     platforms = with stdenv.lib;
                   intersectLists

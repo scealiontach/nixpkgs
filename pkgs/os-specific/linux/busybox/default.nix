@@ -26,12 +26,14 @@ let
 in
 
 stdenv.mkDerivation rec {
-  name = "busybox-1.23.2";
+  name = "busybox-1.26.2";
 
   src = fetchurl {
     url = "http://busybox.net/downloads/${name}.tar.bz2";
-    sha256 = "16ii9sqracvh2r1gfzhmlypl269nnbkpvrwa7270k35d3bigk9h5";
+    sha256 = "05mg6rh5smkzfwqfcazkpwy6h6555llsazikqnvwkaf17y8l8gns";
   };
+
+  hardeningDisable = [ "format" ] ++ lib.optional enableStatic [ "fortify" ];
 
   patches = [ ./busybox-in-store.patch ];
 
@@ -72,7 +74,7 @@ stdenv.mkDerivation rec {
     makeFlagsArray+=("CC=gcc -isystem ${musl}/include -B${musl}/lib -L${musl}/lib")
   '';
 
-  buildInputs = lib.optionals (enableStatic && !useMusl) [ glibc glibc.static ];
+  buildInputs = lib.optionals (enableStatic && !useMusl) [ stdenv.cc.libc stdenv.cc.libc.static ];
 
   crossAttrs = {
     extraCrossConfig = ''

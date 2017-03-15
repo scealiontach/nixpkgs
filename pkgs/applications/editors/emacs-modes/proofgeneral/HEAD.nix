@@ -5,8 +5,8 @@ stdenv.mkDerivation (rec {
 
   src = fetchgit {
     url = "https://github.com/ProofGeneral/PG.git";
-    rev = "16991280fb09743ae7320aef77f6a166afb907d7";
-    sha256 = "1yakjxfz6a09m7lrxff04sj1717gpmhq2bsibd5f9lkp6z0w2i0q";
+    rev = "4bcac92df46da9e68b5e3d565bb118fb63b4feb4";
+    sha256 = "143anwll7mij6iskf3jbbbfzmkp2vnp0q329zpsl2l6v3wk2vv64";
   };
 
   buildInputs = [ emacs texinfo perl which ] ++ stdenv.lib.optional enableDoc texLive;

@@ -10,7 +10,7 @@ assert releaseType == "alpha" || releaseType == "headless";
 
 with stdenv.lib;
 let
-  version = "0.13.13";
+  version = "0.14.21";
   isHeadless = releaseType == "headless";
 
   arch = if stdenv.system == "x86_64-linux" then {
@@ -27,12 +27,12 @@ let
     url = "https://www.factorio.com/get-download/${version}/${releaseType}/${arch.inUrl}";
     name = "factorio_${releaseType}_${arch.inTar}-${version}.tar.gz";
     x64 = {
-      headless = fetchurl        { inherit name url; sha256 = "1ip0h2kh16s07nk6xqpm0i0yb0x32zn306414j15gqg3j0j0mzpn"; };
-      alpha = authenticatedFetch { inherit      url; sha256 = "1hvj51cggp6cbxyndbl4z07kadzxxk3diiqkkv0jm9s0nrwvq9zr"; };
+      headless = fetchurl        { inherit name url; sha256 = "0bx4fq46781vv9vr0ciyckaskksjrqikvcdv1yz0wj8mrb2j08cw"; };
+      alpha = authenticatedFetch { inherit      url; sha256 = "067p1i5wcxk88kmblyklc4lh8fqjc5pqjdarvhjz420vqmdls7k6"; };
     };
     i386 = {
       headless = abort "Factorio 32-bit headless binaries are not available for download.";
-      alpha = authenticatedFetch { inherit      url; sha256 = "14dwlakn7z8jziy0hgm3nskr7chp7753z1dakxlymz9h5653cx8b"; };
+      alpha = authenticatedFetch { inherit      url; sha256 = "0iwhachp0z02w19x5y70qy3b0yp79dspawkcygdfna5cfqrybvx6"; };
     };
   };
 
@@ -114,6 +114,7 @@ let
       wrapProgram $out/bin/factorio                                \
         --prefix LD_LIBRARY_PATH : /run/opengl-driver/lib:$libPath \
         --run "$out/share/factorio/update-config.sh"               \
+        --argv0 "" \
         --add-flags "-c \$HOME/.factorio/config.cfg ${optionalString (mods != []) "--mod-directory=${modDir}"}"
 
         # TODO Currently, every time a mod is changed/added/removed using the

@@ -115,8 +115,8 @@ let
 
       # Did the swap device get activated?
       # uncomment once https://bugs.freedesktop.org/show_bug.cgi?id=86930 is resolved
-      #$machine->waitForUnit("swap.target");
-      $machine->waitUntilSucceeds("cat /proc/swaps | grep -q /dev");
+      $machine->waitForUnit("swap.target");
+      $machine->succeed("cat /proc/swaps | grep -q /dev");
 
       # Check whether the channel works.
       $machine->succeed("nix-env -iA nixos.procps >&2");
@@ -201,19 +201,21 @@ let
 
             # The test cannot access the network, so any packages we
             # need must be included in the VM.
-            system.extraDependencies =
-              [ pkgs.sudo
-                pkgs.docbook5
-                pkgs.docbook5_xsl
-                pkgs.unionfs-fuse
-                pkgs.ntp
-                pkgs.nixos-artwork
-                pkgs.perlPackages.XMLLibXML
-                pkgs.perlPackages.ListCompare
+            system.extraDependencies = with pkgs;
+              [ sudo
+                libxml2.bin
+                libxslt.bin
+                docbook5
+                docbook5_xsl
+                unionfs-fuse
+                ntp
+                nixos-artwork
+                perlPackages.XMLLibXML
+                perlPackages.ListCompare
 
                 # add curl so that rather than seeing the test attempt to download
                 # curl's tarball, we see what it's trying to download
-                pkgs.curl
+                curl
               ]
               ++ optional (bootLoader == "grub" && grubVersion == 1) pkgs.grub
               ++ optionals (bootLoader == "grub" && grubVersion == 2) [ pkgs.grub2 pkgs.grub2_efi ];

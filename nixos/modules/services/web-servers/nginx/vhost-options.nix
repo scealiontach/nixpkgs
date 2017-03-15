@@ -8,6 +8,15 @@
 with lib;
 {
   options = {
+    serverName = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = ''
+        Name of this virtual host. Defaults to attribute name in virtualHosts.
+      '';
+      example = "example.org";
+    };
+
     serverAliases = mkOption {
       type = types.listOf types.str;
       default = [];
@@ -39,8 +48,8 @@ with lib;
     };
 
     acmeFallbackHost = mkOption {
-      type = types.str;
-      default = "0.0.0.0";
+      type = types.nullOr types.str;
+      default = null;
       description = ''
         Host which to proxy requests to if acme challenge is not found. Useful
         if you want multiple hosts to be able to verify the same domain name.

@@ -1,19 +1,20 @@
-{ stdenv, fetchurl, python, pkgconfig, glib, gobjectIntrospection, pycairo, cairo }:
+{ stdenv, fetchurl, mkPythonDerivation, python, pkgconfig, glib, gobjectIntrospection, pycairo, cairo, which, ncurses}:
 
-stdenv.mkDerivation rec {
-  major = "3.20";
+mkPythonDerivation rec {
+  major = "3.22";
   minor = "0";
   name = "pygobject-${major}.${minor}";
 
   src = fetchurl {
     url = "mirror://gnome/sources/pygobject/${major}/${name}.tar.xz";
-    sha256 = "0ikzh3l7g1gjh8jj8vg6mdvrb25svp63gxcam4m0i404yh0lgari";
+    sha256 = "08b29cfb08efc80f7a8630a2734dec65a99c1b59f1e5771c671d2e4ed8a5cbe7";
   };
 
-  buildInputs = [ python pkgconfig glib gobjectIntrospection ];
-  propagatedBuildInputs = [ pycairo cairo ];
+  outputs = [ "out" "dev" ];
 
-  passthru.pythonPath = [];
+  buildInputs = [ pkgconfig glib gobjectIntrospection ]
+                 ++ stdenv.lib.optionals stdenv.isDarwin [ which ncurses ];
+  propagatedBuildInputs = [ pycairo cairo ];
 
   meta = {
     homepage = http://live.gnome.org/PyGObject;

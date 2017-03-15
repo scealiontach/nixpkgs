@@ -1,6 +1,6 @@
-{ stdenv, fetchurl, rpm, cpio, mesa, xorg, cairo
-, libpng, gtk, glib, gdk_pixbuf, fontconfig, freetype, curl
-, dbus_glib, alsaLib, libpulseaudio, libudev, pango
+{ stdenv, fetchurl, rpm, cpio, mesa_noglu, xorg, cairo
+, libpng, gtk2, glib, gdk_pixbuf, fontconfig, freetype, curl
+, dbus_glib, alsaLib, libpulseaudio, systemd, pango
 }:
 
 with stdenv.lib;
@@ -10,13 +10,13 @@ let
   baseURL = "http://dl.google.com/linux/talkplugin/deb/pool/main/g/google-talkplugin";
 
   rpathPlugin = makeLibraryPath
-    [ mesa
+    [ mesa_noglu
       xorg.libXt
       xorg.libX11
       xorg.libXrender
       cairo
       libpng
-      gtk
+      gtk2
       glib
       fontconfig
       freetype
@@ -26,7 +26,7 @@ let
   rpathProgram = makeLibraryPath
     [ gdk_pixbuf
       glib
-      gtk
+      gtk2
       xorg.libX11
       xorg.libXcomposite
       xorg.libXfixes
@@ -37,7 +37,7 @@ let
       alsaLib
       libpulseaudio
       dbus_glib
-      libudev
+      systemd
       curl
       pango
       cairo
@@ -51,18 +51,18 @@ stdenv.mkDerivation rec {
   # You can get the upstream version and SHA-1 hash from the following URLs:
   # curl -s http://dl.google.com/linux/talkplugin/deb/dists/stable/main/binary-amd64/Packages | grep -E 'Version|SHA1'
   # curl -s http://dl.google.com/linux/talkplugin/deb/dists/stable/main/binary-i386/Packages | grep -E 'Version|SHA1'
-  version = "5.41.0.0";
+  version = "5.41.3.0";
 
   src =
     if stdenv.system == "x86_64-linux" then
       fetchurl {
         url = "${baseURL}/google-talkplugin_${version}-1_amd64.deb";
-        sha1 = "1c3cc0411444587b56178de4868eb5d0ff742ec0";
+        sha1 = "0bbc3d6997ba22ce712d93e5bc336c894b54fc81";
       }
     else if stdenv.system == "i686-linux" then
       fetchurl {
         url = "${baseURL}/google-talkplugin_${version}-1_i386.deb";
-        sha1 = "0d31d726c5e9a49917e2749e73386b1c0fdcb376";
+        sha1 = "6eae0544858f85c68b0cc46d7786e990bd94f139";
       }
     else throw "Google Talk does not support your platform.";
 
@@ -98,6 +98,10 @@ stdenv.mkDerivation rec {
       mkdir -p $(dirname $preload)
       gcc -shared ${./preload.c} -o $preload -ldl -DOUT=\"$out\" -fPIC
       echo $preload > $plugins/extra-ld-preload
+
+      # Prevent a dependency on gcc.
+      strip -S $preload
+      patchELF $preload
     '';
 
   dontStrip = true;

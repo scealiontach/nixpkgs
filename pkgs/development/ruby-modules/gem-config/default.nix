@@ -19,16 +19,31 @@
 
 { lib, fetchurl, writeScript, ruby, kerberos, libxml2, libxslt, python, stdenv, which
 , libiconv, postgresql, v8_3_16_14, clang, sqlite, zlib, imagemagick
-, pkgconfig , ncurses, xapian, gpgme, utillinux, fetchpatch, tzdata, icu, libffi
+, pkgconfig , ncurses, xapian_1_2_22, gpgme, utillinux, fetchpatch, tzdata, icu, libffi
 , cmake, libssh2, openssl, mysql, darwin, git, perl, gecode_3, curl
-, libmsgpack, qt48
-}:
+, libmsgpack, qt48, libsodium, snappy, libossp_uuid, lxc
+}@args:
 
 let
   v8 = v8_3_16_14;
 in
 
 {
+  bundler = attrs:
+    let
+      templates = "${attrs.ruby.gemPath}/gems/${attrs.gemName}-${attrs.version}/lib/bundler/templates/";
+    in {
+      # patching shebangs would fail on the templates/Executable file, so we
+      # temporarily remove the executable flag.
+      preFixup  = "chmod -x $out/${templates}/Executable";
+      postFixup = ''
+        chmod +x $out/${templates}/Executable
+
+        # Allows to load another bundler version
+        sed -i -e "s/activate_bin_path/bin_path/g" $out/bin/bundle
+      '';
+    };
+
   capybara-webkit = attrs: {
     buildInputs = [ qt48 ];
   };
@@ -75,6 +90,10 @@ in
     buildInputs = [ libmsgpack ];
   };
 
+  mysql = attrs: {
+    buildInputs = [ mysql.lib zlib openssl ];
+  };
+
   mysql2 = attrs: {
     buildInputs = [ mysql.lib zlib openssl ];
   };
@@ -114,12 +133,47 @@ in
     buildInputs = [ openssl ];
   };
 
+  rbnacl = spec: {
+    postInstall = ''
+    sed -i $(cat $out/nix-support/gem-meta/install-path)/lib/rbnacl.rb -e "2a \
+    RBNACL_LIBSODIUM_GEM_LIB_PATH = '${libsodium.out}/lib/libsodium.${if stdenv.isDarwin then "dylib" else "so"}'
+    "
+    '';
+  };
+
   rmagick = attrs: {
     buildInputs = [ imagemagick pkgconfig which ];
   };
 
+  ruby-lxc = attrs: {
+    buildInputs = [ lxc ];
+  };
+
+  ruby-terminfo = attrs: {
+    buildInputs = [ ncurses ];
+    buildFlags = [
+      "--with-cflags=-I${ncurses.dev}/include"
+      "--with-ldflags=-L${ncurses.out}/lib"
+    ];
+  };
   rugged = attrs: {
     buildInputs = [ cmake pkgconfig openssl libssh2 zlib ];
+  };
+
+  scrypt = attrs:
+    if stdenv.isDarwin then {
+      dontBuild = false;
+      postPatch = ''
+        sed -i -e "s/-arch i386//" Rakefile ext/scrypt/Rakefile
+      '';
+    } else {};
+
+  sequel_pg = attrs: {
+    buildInputs = [ postgresql ];
+  };
+
+  snappy = attrs: {
+    buildInputs = [ args.snappy ];
   };
 
   sqlite3 = attrs: {
@@ -165,26 +219,20 @@ in
     '';
   };
 
+  uuid4r = attrs: {
+    buildInputs = [ which libossp_uuid ];
+  };
+
   xapian-ruby = attrs: {
     # use the system xapian
     dontBuild = false;
-    buildInputs = [ xapian pkgconfig zlib ];
+    buildInputs = [ xapian_1_2_22 pkgconfig zlib ];
     postPatch = ''
       cp ${./xapian-Rakefile} Rakefile
     '';
     preInstall = ''
-      export XAPIAN_CONFIG=${xapian}/bin/xapian-config
+      export XAPIAN_CONFIG=${xapian_1_2_22}/bin/xapian-config
     '';
   };
 
-  # patching shebangs would fail on the templates/Executable file, so we
-  # temporarily remove the executable flag.
-  bundler = attrs:
-    let
-      templates = "${attrs.ruby.gemPath}/gems/${attrs.gemName}-${attrs.version}/lib/bundler/templates/";
-    in {
-      preFixup  = "chmod -x $out/${templates}/Executable";
-      postFixup = "chmod +x $out/${templates}/Executable";
-    };
 }
-

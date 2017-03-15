@@ -2,19 +2,20 @@
 
 stdenv.mkDerivation rec {
   name = "man-pages-${version}";
-  version = "4.07";
+  version = "4.09";
 
   src = fetchurl {
     url = "mirror://kernel/linux/docs/man-pages/${name}.tar.xz";
-    sha256 = "1vimj3va16plxmv46rw6nzw4m9l11hb7r1d217y1bjpd5q8nw8qz";
+    sha256 = "1740gq9sq28dp5a5sjn1ya7cvrv8mbky6knb7734v8k29a7a0x55";
   };
 
-  # keep developer docs separately (man2 and man3)
-  outputs = [ "out" "docdev" ];
   makeFlags = [ "MANDIR=$(out)/share/man" ];
-  postFixup = ''
-    moveToOutput share/man/man2 "$docdev"
+  postInstall = ''
+    # conflict with shadow-utils
+    rm $out/share/man/man5/passwd.5 \
+       $out/share/man/man3/getspnam.3
   '';
+  outputDocdev = "out";
 
   meta = with stdenv.lib; {
     description = "Linux development manual pages";

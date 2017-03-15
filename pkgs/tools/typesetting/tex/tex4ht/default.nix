@@ -10,6 +10,8 @@ stdenv.mkDerivation rec {
 
   buildInputs = [ tetex unzip ];
 
+  hardeningDisable = [ "format" ];
+
   buildPhase = ''
     cd src
     for f in tex4ht t4ht htcmd ; do
@@ -32,5 +34,6 @@ stdenv.mkDerivation rec {
     description = "A system to convert (La)TeX documents to HTML and various other formats";
     license = stdenv.lib.licenses.lppl12;
     platforms = stdenv.lib.platforms.unix;
+    broken = true; # use the one from texlive.tex4ht
   };
 }

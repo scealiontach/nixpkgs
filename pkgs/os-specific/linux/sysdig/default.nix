@@ -1,50 +1,53 @@
-{stdenv, fetchurl, fetchFromGitHub, cmake, luajit, kernel, zlib, ncurses, perl, jsoncpp, libb64, openssl, curl}:
+{stdenv, fetchurl, fetchFromGitHub, cmake, luajit, kernel, zlib, ncurses, perl, jsoncpp, libb64, openssl, curl, jq, gcc, fetchpatch}:
+
 let
   inherit (stdenv.lib) optional optionalString;
-  s = rec {
-    name = "sysdig-${version}";
-    version = "0.11.0";
-    owner = "draios";
-    repo = "sysdig";
-    rev = version;
-    sha256 = "131bafa7jy16r2jwph50j0bxwqdvr319fsfhqkavx6xy18i31q3v";
-  };
-  buildInputs = [
-    cmake zlib luajit ncurses perl jsoncpp libb64 openssl curl
-  ];
-  # sysdig-0.11.0 depends on some headers from jq which are not
-  # installed by default.
-  # Relevant sysdig issue: https://github.com/draios/sysdig/issues/626
-  jq-prefix = fetchurl {
-    url="https://github.com/stedolan/jq/releases/download/jq-1.5/jq-1.5.tar.gz";
-    sha256="0g29kyz4ykasdcrb0zmbrp2jqs9kv1wz9swx849i2d1ncknbzln4";
-  };
+  baseName = "sysdig";
+  version = "0.15.0";
 in
-stdenv.mkDerivation {
-  inherit (s) name version;
-  inherit buildInputs;
-  src = fetchFromGitHub {
-    inherit (s) owner repo rev sha256;
+stdenv.mkDerivation rec {
+  name = "${baseName}-${version}";
+
+  src = fetchurl {
+    name = "${name}.tar.gz";
+    url = "https://github.com/draios/sysdig/archive/${version}.tar.gz";
+    sha256 = "08spprzgx6ksd7sjp5nk7z5szdlixh2sb0bsb9mfaq4xr12gsjw2";
   };
-  postPatch = ''
-    sed '1i#include <cmath>' -i userspace/libsinsp/{cursesspectro,filterchecks}.cpp
-  '';
+
+  buildInputs = [
+    cmake zlib luajit ncurses perl jsoncpp libb64 openssl curl jq gcc
+  ];
+
+  hardeningDisable = [ "pic" ];
 
   cmakeFlags = [
     "-DUSE_BUNDLED_DEPS=OFF"
-    "-DUSE_BUNDLED_JQ=ON"
-    "-DSYSDIG_VERSION=${s.version}"
+    "-DSYSDIG_VERSION=${version}"
   ] ++ optional (kernel == null) "-DBUILD_DRIVER=OFF";
+
   preConfigure = ''
     export INSTALL_MOD_PATH="$out"
   '' + optionalString (kernel != null) ''
     export KERNELDIR="${kernel.dev}/lib/modules/${kernel.modDirVersion}/build"
   '';
-  preBuild = ''
-    mkdir -p jq-prefix/src
-    cp ${jq-prefix} jq-prefix/src/jq-1.5.tar.gz
-  '';
-  postInstall = optionalString (kernel != null) ''
+
+  libPath = stdenv.lib.makeLibraryPath [
+    zlib
+    luajit
+    ncurses
+    jsoncpp
+    curl
+    jq
+    openssl
+    libb64
+    gcc
+    stdenv.cc.cc
+  ];
+
+  postInstall = ''
+    patchelf --set-rpath "$libPath" "$out/bin/sysdig"
+    patchelf --set-rpath "$libPath" "$out/bin/csysdig"
+  '' + optionalString (kernel != null) ''
     make install_driver
     kernel_dev=${kernel.dev}
     kernel_dev=''${kernel_dev#/nix/store/}
@@ -59,8 +62,7 @@ stdenv.mkDerivation {
   '';
 
   meta = with stdenv.lib; {
-    inherit (s) version;
-    description = ''A tracepoint-based system tracing tool for Linux (with clients for other OSes)'';
+    description = "A tracepoint-based system tracing tool for Linux (with clients for other OSes)";
     license = licenses.gpl2;
     maintainers = [maintainers.raskin];
     platforms = platforms.linux ++ platforms.darwin;

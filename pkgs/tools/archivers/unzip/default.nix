@@ -9,6 +9,8 @@ stdenv.mkDerivation {
     sha256 = "0dxx11knh3nk95p2gg2ak777dd11pr7jx5das2g49l262scrcv83";
   };
 
+  hardeningDisable = [ "format" ];
+
   patches = [
     ./CVE-2014-8139.diff
     ./CVE-2014-8140.diff
@@ -16,6 +18,8 @@ stdenv.mkDerivation {
     ./CVE-2014-9636.diff
     ./CVE-2015-7696.diff
     ./CVE-2015-7697.diff
+    ./CVE-2014-9913.patch
+    ./CVE-2016-9844.patch
   ] ++ stdenv.lib.optional enableNLS
     (fetchurl {
       url = "http://sources.gentoo.org/cgi-bin/viewvc.cgi/gentoo-x86/app-arch/unzip/files/unzip-6.0-natspec.patch?revision=1.1";

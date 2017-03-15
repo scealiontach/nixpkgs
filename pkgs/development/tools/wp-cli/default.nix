@@ -1,38 +1,51 @@
-{ stdenv, lib, writeText, bash, fetchurl, php }:
+{ stdenv, lib, fetchurl, php }:
 
 let
-  phpIni = writeText "wp-cli-php.ini" ''
-    [Phar]
-    phar.readonly = Off
-  '';
+  version = "1.1.0";
+
+  bin  = "bin/wp";
+  ini  = "etc/php/wp-cli.ini";
+  phar = "share/wp-cli/wp-cli.phar";
+
+  completion = fetchurl {
+    url    = "https://raw.githubusercontent.com/wp-cli/wp-cli/v${version}/utils/wp-completion.bash";
+    sha256 = "15d330x6d3fizrm6ckzmdknqg6wjlx5fr87bmkbd5s6a1ihs0g24";
+  };
 
 in stdenv.mkDerivation rec {
-  version = "0.23.1";
   name = "wp-cli-${version}";
 
   src = fetchurl {
-    url = "https://github.com/wp-cli/wp-cli/releases/download/v${version}/${name}.phar";
-    sha256 = "1sjai8gjsx6j82lsxq9m827bczp4ajnldk6ibj4krcisn9pjva5f";
+    url    = "https://github.com/wp-cli/wp-cli/releases/download/v${version}/${name}.phar";
+    sha256 = "08b2lzc8fa9f5xldbdza6x3lg6jsp3wfwpyy187gxqw5pmqp11xc";
   };
 
-  propagatedBuildInputs = [ php ];
-
   buildCommand = ''
-    mkdir -p $out/bin
+    mkdir -p $out/bin $out/etc/php
 
-    cat >$out/bin/wp <<EOF
-    #! ${bash}/bin/bash -e
-    exec ${php}/bin/php -c ${phpIni} -f ${src} "\$@"
-    EOF
+    cat <<_EOF > $out/${bin}
+    #! ${stdenv.shell} -eu
+    exec ${lib.getBin php}/bin/php \\
+      -c $out/${ini} \\
+      -f $out/${phar} "\$@"
+    _EOF
+    chmod 755 $out/${bin}
 
-    chmod +x $out/bin/wp
+    cat <<_EOF > $out/${ini}
+    [Phar]
+    phar.readonly = Off
+    _EOF
+    chmod 644 $out/${ini}
+
+    install -Dm644 ${src}        $out/${phar}
+    install -Dm644 ${completion} $out/share/bash-completion/completions/wp
   '';
 
-  meta = {
+  meta = with stdenv.lib; {
     description = "A command line interface for WordPress";
-    maintainers = [ stdenv.lib.maintainers.peterhoeg ];
-    platforms = stdenv.lib.platforms.all;
+    maintainers = with maintainers; [ peterhoeg ];
+    platforms = platforms.all;
     homepage = https://wp-cli.org;
-    license = stdenv.lib.licenses.mit;
+    license = licenses.mit;
   };
 }

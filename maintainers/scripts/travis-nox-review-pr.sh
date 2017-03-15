@@ -38,10 +38,23 @@ while test -n "$1"; do
             nix-build $TRAVIS_BUILD_DIR/pkgs/top-level/release.nix --attr tarball --show-trace
             ;;
 
+        nixpkgs-unstable)
+            echo "=== Checking nixpkgs unstable job"
+
+            nix-instantiate $TRAVIS_BUILD_DIR/pkgs/top-level/release.nix --attr unstable --show-trace
+            ;;
+
         nixpkgs-lint)
             echo "=== Checking nixpkgs lint"
 
             nix-shell --packages nixpkgs-lint --run "nixpkgs-lint -f $TRAVIS_BUILD_DIR"
+            ;;
+
+        nox)
+            echo "=== Fetching Nox from binary cache"
+
+            # build nox silently so it's not in the log
+            nix-build "<nixpkgs>" -A nox -A stdenv
             ;;
 
         pr)
@@ -55,7 +68,7 @@ while test -n "$1"; do
                     token="--token $GITHUB_TOKEN"
                 fi
 
-                nix-shell --packages nox git --run "nox-review pr --slug $TRAVIS_REPO_SLUG $token $TRAVIS_PULL_REQUEST"
+                nix-shell --packages nox --run "nox-review pr --slug $TRAVIS_REPO_SLUG $token $TRAVIS_PULL_REQUEST"
             fi
             ;;
 

@@ -2,19 +2,18 @@
 , jasper, libintlOrEmpty, gobjectIntrospection, doCheck ? false }:
 
 let
-  ver_maj = "2.34";
-  ver_min = "0";
+  ver_maj = "2.36";
+  ver_min = "5";
 in
 stdenv.mkDerivation rec {
   name = "gdk-pixbuf-${ver_maj}.${ver_min}";
 
   src = fetchurl {
     url = "mirror://gnome/sources/gdk-pixbuf/${ver_maj}/${name}.tar.xz";
-    sha256 = "0yc8indbl3hf18z6x6kjg59xp9sngm1d8vmz4c7bs6g27qw5npnm";
+    sha256 = "7ace06170291a1f21771552768bace072ecdea9bd4a02f7658939b9a314c40fc";
   };
 
-  outputs = [ "dev" "out" "docdev" ];
-  outputBin = "dev";
+  outputs = [ "out" "dev" "devdoc" ];
 
   setupHook = ./setup-hook.sh;
 
@@ -27,14 +26,21 @@ stdenv.mkDerivation rec {
 
   propagatedBuildInputs = [ glib libtiff libjpeg libpng jasper ];
 
+  configureFlags = "--with-libjasper --with-x11"
+    + stdenv.lib.optionalString (gobjectIntrospection != null) " --enable-introspection=yes"
+    ;
+
   # on darwin, tests don't link
   preBuild = stdenv.lib.optionalString (stdenv.isDarwin && !doCheck) ''
     substituteInPlace Makefile --replace "docs tests" "docs"
   '';
 
-  configureFlags = "--with-libjasper --with-x11"
-    + stdenv.lib.optionalString (gobjectIntrospection != null) " --enable-introspection=yes"
-    ;
+  postInstall =
+    # All except one utility seem to be only useful during building.
+    ''
+      moveToOutput "bin" "$dev"
+      moveToOutput "bin/gdk-pixbuf-thumbnailer" "$out"
+    '';
 
   # The tests take an excessive amount of time (> 1.5 hours) and memory (> 6 GB).
   inherit (doCheck);

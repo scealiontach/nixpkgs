@@ -1,20 +1,17 @@
 {fetchurl, stdenv, dpkg, makeWrapper,
  alsaLib, cups, curl, dbus, expat, fontconfig, freetype, glib, gst_all_1, harfbuzz, libcap,
- libpulseaudio, mesa, nspr, nss, libudev, wayland, xorg, zlib, ...
+ libpulseaudio, libxml2, libxslt, mesa, nspr, nss, openssl, systemd, wayland, xorg, zlib, ...
 }:
 
 assert stdenv.system == "x86_64-linux";
 
-# BUG: Viber requires running tray application, segfaulting if it's missing
-# FIX: Start something like `stalonetray` if you DE doesn't provide tray
-
 stdenv.mkDerivation rec {
   name = "viber-${version}";
-  version = "6.0.1.5";
+  version = "6.5.5.1481";
 
   src = fetchurl {
     url = "http://download.cdn.viber.com/cdn/desktop/Linux/viber.deb";
-    sha256 = "026vp2pv66b2dlwi5w5wk4yjnnmnsqapdww98p7xdnz8n0hnsbbi";
+    sha256 = "0gvpaprfki04x66ga2ljksspdxd4cz455h92a7i2dnd69w1kik5s";
   };
 
   buildInputs = [ dpkg makeWrapper ];
@@ -35,11 +32,14 @@ stdenv.mkDerivation rec {
       harfbuzz
       libcap
       libpulseaudio
+      libxml2
+      libxslt
       mesa
       nspr
       nss
+      openssl
       stdenv.cc.cc
-      libudev
+      systemd
       wayland
       zlib
 
@@ -80,7 +80,7 @@ stdenv.mkDerivation rec {
     wrapProgram $out/opt/viber/Viber \
       --set QT_PLUGIN_PATH "$out/opt/viber/plugins" \
       --set QT_XKB_CONFIG_ROOT "${xorg.xkeyboardconfig}/share/X11/xkb" \
-      --set QTCOMPOSE "${xorg.libX11}/share/X11/locale"
+      --set QTCOMPOSE "${xorg.libX11.out}/share/X11/locale"
     ln -s $out/opt/viber/Viber $out/bin/viber
 
     mv $out/usr/share $out/share

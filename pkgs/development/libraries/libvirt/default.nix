@@ -1,6 +1,6 @@
 { stdenv, fetchurl, fetchpatch
 , pkgconfig, makeWrapper
-, libxml2, gnutls, devicemapper, perl, python
+, libxml2, gnutls, devicemapper, perl, python2
 , iproute, iptables, readline, lvm2, utillinux, systemd, libpciaccess, gettext
 , libtasn1, ebtables, libgcrypt, yajl, pmutils, libcap_ng
 , dnsmasq, libnl, libpcap, libxslt, xhtml1, numad, numactl, perlPackages
@@ -9,18 +9,18 @@
 # if you update, also bump pythonPackages.libvirt or it will break
 stdenv.mkDerivation rec {
   name = "libvirt-${version}";
-  version = "2.0.0";
+  version = "3.0.0";
 
   src = fetchurl {
     url = "http://libvirt.org/sources/${name}.tar.xz";
-    sha256 = "1jwszhpjn09zkqji8w1x97rw0wqcl71ll2y6vp056fb1bvshms8h";
+    sha256 = "0php6wxjcilpir0miwg06yd2ha25zi9fv2apvvgv5c8k1svjd7cx";
   };
 
   patches = [ ./build-on-bsd.patch ];
 
   nativeBuildInputs = [ makeWrapper pkgconfig ];
   buildInputs = [
-    libxml2 gnutls perl python readline
+    libxml2 gnutls perl python2 readline
     gettext libtasn1 libgcrypt yajl
     libxslt xhtml1 perlPackages.XMLXPath curl libpcap
   ] ++ stdenv.lib.optionals stdenv.isLinux [
@@ -31,7 +31,7 @@ stdenv.mkDerivation rec {
   ];
 
   preConfigure = stdenv.lib.optionalString stdenv.isLinux ''
-    PATH=${iproute}/sbin:${iptables}/sbin:${ebtables}/sbin:${lvm2}/sbin:${systemd}/bin:$PATH
+    PATH=${stdenv.lib.makeBinPath [ iproute iptables ebtables lvm2 systemd ]}:$PATH
     substituteInPlace configure \
       --replace 'as_dummy="/bin:/usr/bin:/usr/sbin"' 'as_dummy="${numad}/bin"'
   '' + ''
@@ -69,7 +69,7 @@ stdenv.mkDerivation rec {
       --replace "$out/bin" "${gettext}/bin"
   '' + stdenv.lib.optionalString stdenv.isLinux ''
     wrapProgram $out/sbin/libvirtd \
-      --prefix PATH : ${iptables}/sbin:${iproute}/sbin:${pmutils}/bin:${numad}/bin:${numactl}/bin
+      --prefix PATH : ${stdenv.lib.makeBinPath [ iptables iproute pmutils numad numactl ]}
   '';
 
   enableParallelBuilding = true;

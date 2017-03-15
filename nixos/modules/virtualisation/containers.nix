@@ -12,21 +12,21 @@ let
         ''
         echo "Bringing ${name} up"
         ip link set dev ${name} up
-        ${optionalString (cfg . "localAddress" or null != null) ''
+        ${optionalString (cfg.localAddress != null) ''
           echo "Setting ip for ${name}"
-          ip addr add ${cfg . "localAddress"} dev ${name}
+          ip addr add ${cfg.localAddress} dev ${name}
         ''}
-        ${optionalString (cfg . "localAddress6" or null != null) ''
+        ${optionalString (cfg.localAddress6 != null) ''
           echo "Setting ip6 for ${name}"
-          ip -6 addr add ${cfg . "localAddress6"} dev ${name}
+          ip -6 addr add ${cfg.localAddress6} dev ${name}
         ''}
-        ${optionalString (cfg . "hostAddress" or null != null) ''
+        ${optionalString (cfg.hostAddress != null) ''
           echo "Setting route to host for ${name}"
-          ip route add ${cfg . "hostAddress"} dev ${name}
+          ip route add ${cfg.hostAddress} dev ${name}
         ''}
-        ${optionalString (cfg . "hostAddress6" or null != null) ''
+        ${optionalString (cfg.hostAddress6 != null) ''
           echo "Setting route6 to host for ${name}"
-          ip -6 route add ${cfg . "hostAddress6"} dev ${name}
+          ip -6 route add ${cfg.hostAddress6} dev ${name}
         ''}
         ''
         );
@@ -56,9 +56,7 @@ let
             ip -6 route add default via $HOST_ADDRESS6
           fi
 
-          ${concatStringsSep "\n" (mapAttrsToList renderExtraVeth cfg . "extraVeths" or {})}
-          ip a
-          ip r
+          ${concatStringsSep "\n" (mapAttrsToList renderExtraVeth cfg.extraVeths)}
         fi
 
         # Start the regular stage 1 script.
@@ -67,7 +65,8 @@ let
     );
 
   nspawnExtraVethArgs = (name: cfg: "--network-veth-extra=${name}");
-  startScript = (cfg:
+
+  startScript = cfg:
     ''
       mkdir -p -m 0755 "$root/etc" "$root/var/lib"
       mkdir -p -m 0700 "$root/var/lib/private" "$root/root" /run/containers
@@ -90,13 +89,18 @@ let
         if [ -n "$HOST_BRIDGE" ]; then
           extraFlags+=" --network-bridge=$HOST_BRIDGE"
         fi
+        if [ -n "$HOST_PORT" ]; then
+          OIFS=$IFS
+          IFS=","
+          for i in $HOST_PORT
+          do
+              extraFlags+=" --port=$i"
+          done
+          IFS=$OIFS
+        fi
       fi
 
-      ${if cfg . "extraVeths" or null != null then
-        ''extraFlags+=" ${concatStringsSep " " (mapAttrsToList nspawnExtraVethArgs cfg . "extraVeths" or {})}"''
-        else
-          ''# No extra veth pairs to create''
-      }
+      extraFlags+=" ${concatStringsSep " " (mapAttrsToList nspawnExtraVethArgs cfg.extraVeths)}"
 
       for iface in $INTERFACES; do
         extraFlags+=" --network-interface=$iface"
@@ -133,12 +137,18 @@ let
         --setenv LOCAL_ADDRESS="$LOCAL_ADDRESS" \
         --setenv HOST_ADDRESS6="$HOST_ADDRESS6" \
         --setenv LOCAL_ADDRESS6="$LOCAL_ADDRESS6" \
+        --setenv HOST_PORT="$HOST_PORT" \
         --setenv PATH="$PATH" \
+        ${if cfg.additionalCapabilities != null && cfg.additionalCapabilities != [] then
+          ''--capability="${concatStringsSep " " cfg.additionalCapabilities}"'' else ""
+        } \
+        ${if cfg.tmpfs != null && cfg.tmpfs != [] then
+          ''--tmpfs=${concatStringsSep " --tmpfs=" cfg.tmpfs}'' else ""
+        } \
         ${containerInit cfg} "''${SYSTEM_PATH:-/nix/var/nix/profiles/system}/init"
-    ''
-    );
+    '';
 
-  preStartScript = (cfg:
+  preStartScript = cfg:
     ''
       # Clean up existing machined registration and interfaces.
       machinectl terminate "$INSTANCE" 2> /dev/null || true
@@ -151,45 +161,43 @@ let
       ${concatStringsSep "\n" (
         mapAttrsToList (name: cfg:
           ''ip link del dev ${name} 2> /dev/null || true ''
-        ) cfg . "extraVeths" or {}
+        ) cfg.extraVeths
       )}
-   ''
-    );
+   '';
+
   postStartScript = (cfg:
     let
-      ipcall = (cfg: ipcmd: variable: attribute:
-        if cfg . attribute or null == null then
+      ipcall = cfg: ipcmd: variable: attribute:
+        if cfg.${attribute} == null then
           ''
             if [ -n "${variable}" ]; then
               ${ipcmd} add ${variable} dev $ifaceHost
             fi
           ''
         else
-          ''${ipcmd} add ${cfg . attribute} dev $ifaceHost''
-        );
-      renderExtraVeth = (name: cfg:
-        if cfg . "hostBridge" or null != null then
+          ''${ipcmd} add ${cfg.${attribute}} dev $ifaceHost'';
+      renderExtraVeth = name: cfg:
+        if cfg.hostBridge != null then
           ''
             # Add ${name} to bridge ${cfg.hostBridge}
             ip link set dev ${name} master ${cfg.hostBridge} up
           ''
         else
           ''
-          # Set IPs and routes for ${name}
-          ${optionalString (cfg . "hostAddress" or null != null) ''
-            ip addr add ${cfg . "hostAddress"} dev ${name}
-          ''}
-          ${optionalString (cfg . "hostAddress6" or null != null) ''
-            ip -6 addr add ${cfg . "hostAddress6"} dev ${name}
-          ''}
-          ${optionalString (cfg . "localAddress" or null != null) ''
-            ip route add ${cfg . "localAddress"} dev ${name}
-          ''}
-          ${optionalString (cfg . "localAddress6" or null != null) ''
-            ip -6 route add ${cfg . "localAddress6"} dev ${name}
-          ''}
-          ''
-        );
+            # Set IPs and routes for ${name}
+            ${optionalString (cfg.hostAddress != null) ''
+              ip addr add ${cfg.hostAddress} dev ${name}
+            ''}
+            ${optionalString (cfg.hostAddress6 != null) ''
+              ip -6 addr add ${cfg.hostAddress6} dev ${name}
+            ''}
+            ${optionalString (cfg.localAddress != null) ''
+              ip route add ${cfg.localAddress} dev ${name}
+            ''}
+            ${optionalString (cfg.localAddress6 != null) ''
+              ip -6 route add ${cfg.localAddress6} dev ${name}
+            ''}
+          '';
     in
       ''
         if [ "$PRIVATE_NETWORK" = 1 ]; then
@@ -202,7 +210,7 @@ let
             ${ipcall cfg "ip route" "$LOCAL_ADDRESS" "localAddress"}
             ${ipcall cfg "ip -6 route" "$LOCAL_ADDRESS6" "localAddress6"}
           fi
-          ${concatStringsSep "\n" (mapAttrsToList renderExtraVeth cfg . "extraVeths" or {})}
+          ${concatStringsSep "\n" (mapAttrsToList renderExtraVeth cfg.extraVeths)}
         fi
 
         # Get the leader PID so that we can signal it in
@@ -212,6 +220,41 @@ let
         machinectl show "$INSTANCE" | sed 's/Leader=\(.*\)/\1/;t;d' > "/run/containers/$INSTANCE.pid"
       ''
   );
+
+  serviceDirectives = cfg: {
+    ExecReload = pkgs.writeScript "reload-container"
+      ''
+        #! ${pkgs.stdenv.shell} -e
+        ${pkgs.nixos-container}/bin/nixos-container run "$INSTANCE" -- \
+          bash --login -c "''${SYSTEM_PATH:-/nix/var/nix/profiles/system}/bin/switch-to-configuration test"
+      '';
+
+    SyslogIdentifier = "container %i";
+
+    EnvironmentFile = "-/etc/containers/%i.conf";
+
+    Type = "notify";
+
+    # Note that on reboot, systemd-nspawn returns 133, so this
+    # unit will be restarted. On poweroff, it returns 0, so the
+    # unit won't be restarted.
+    RestartForceExitStatus = "133";
+    SuccessExitStatus = "133";
+
+    Restart = "on-failure";
+
+    # Hack: we don't want to kill systemd-nspawn, since we call
+    # "machinectl poweroff" in preStop to shut down the
+    # container cleanly. But systemd requires sending a signal
+    # (at least if we want remaining processes to be killed
+    # after the timeout). So send an ignored signal.
+    KillMode = "mixed";
+    KillSignal = "WINCH";
+
+    DevicePolicy = "closed";
+    DeviceAllow = map (d: "${d.node} ${d.modifier}") cfg.allowedDevices;
+  };
+
 
   system = config.nixpkgs.system;
 
@@ -243,6 +286,27 @@ let
 
   };
 
+  allowedDeviceOpts = { name, config, ... }: {
+    options = {
+      node = mkOption {
+        example = "/dev/net/tun";
+        type = types.str;
+        description = "Path to device node";
+      };
+      modifier = mkOption {
+        example = "rw";
+        type = types.str;
+        description = ''
+          Device node access modifier. Takes a combination
+          <literal>r</literal> (read), <literal>w</literal> (write), and
+          <literal>m</literal> (mknod). See the
+          <literal>systemd.resource-control(5)</literal> man page for more
+          information.'';
+      };
+    };
+  };
+
+
   mkBindFlag = d:
                let flagPrefix = if d.isReadOnly then " --bind-ro=" else " --bind=";
                    mountstr = if d.hostPath != null then "${d.hostPath}:${d.mountPoint}" else "${d.mountPoint}";
@@ -260,6 +324,36 @@ let
         Only one of hostAddress* or hostBridge can be given.
       '';
     };
+
+    forwardPorts = mkOption {
+      type = types.listOf (types.submodule {
+        options = {
+          protocol = mkOption {
+            type = types.str;
+            default = "tcp";
+            description = "The protocol specifier for port forwarding between host and container";
+          };
+          hostPort = mkOption {
+            type = types.int;
+            description = "Source port of the external interface on host";
+          };
+          containerPort = mkOption {
+            type = types.nullOr types.int;
+            default = null;
+            description = "Target port of container";
+          };
+        };
+      });
+      default = [];
+      example = [ { protocol = "tcp"; hostPort = 8080; containerPort = 80; } ];
+      description = ''
+        List of forwarded ports from host to container. Each forwarded port
+        is specified by protocol, hostPort and containerPort. By default,
+        protocol is tcp and hostPort and containerPort are assumed to be
+        the same if containerPort is not explicitly given. 
+      '';
+    };
+
 
     hostAddress = mkOption {
       type = types.nullOr types.str;
@@ -307,6 +401,18 @@ let
 
   };
 
+  dummyConfig =
+    {
+      extraVeths = {};
+      additionalCapabilities = [];
+      allowedDevices = [];
+      hostAddress = null;
+      hostAddress6 = null;
+      localAddress = null;
+      localAddress6 = null;
+      tmpfs = null;
+    };
+
 in
 
 {
@@ -340,6 +446,20 @@ in
                 A specification of the desired configuration of this
                 container, as a NixOS module.
               '';
+              type = lib.mkOptionType {
+                name = "Toplevel NixOS config";
+                merge = loc: defs: (import ../../lib/eval-config.nix {
+                  inherit system;
+                  modules =
+                    let extraConfig =
+                      { boot.isContainer = true;
+                        networking.hostName = mkDefault name;
+                        networking.useDHCP = false;
+                      };
+                    in [ extraConfig ] ++ (map (x: x.value) defs);
+                  prefix = [ "containers" name ];
+                }).config;
+              };
             };
 
             path = mkOption {
@@ -350,6 +470,26 @@ in
                 <option>config</option>, you can specify the path to
                 the evaluated NixOS system configuration, typically a
                 symlink to a system profile.
+              '';
+            };
+
+            additionalCapabilities = mkOption {
+              type = types.listOf types.str;
+              default = [];
+              example = [ "CAP_NET_ADMIN" "CAP_MKNOD" ];
+              description = ''
+                Grant additional capabilities to the container.  See the
+                capabilities(7) and systemd-nspawn(1) man pages for more
+                information.
+              '';
+            };
+            enableTun = mkOption {
+              type = types.bool;
+              default = false;
+              description = ''
+                Allows the container to create and setup tunnel interfaces
+                by granting the <literal>NET_ADMIN</literal> capability and
+                enabling access to <literal>/dev/net/tun</literal>.
               '';
             };
 
@@ -376,10 +516,20 @@ in
               '';
             };
 
+            macvlans = mkOption {
+              type = types.listOf types.str;
+              default = [];
+              example = [ "eth1" "eth2" ];
+              description = ''
+                The list of host interfaces from which macvlans will be
+                created. For each interface specified, a macvlan interface
+                will be created and moved to the container.
+              '';
+            };
+
             extraVeths = mkOption {
-              type = types.attrsOf types.optionSet;
+              type = with types; attrsOf (submodule { options = networkOptions; });
               default = {};
-              options = networkOptions;
               description = ''
                 Extra veth-pairs to be created for the container
               '';
@@ -394,8 +544,7 @@ in
             };
 
             bindMounts = mkOption {
-              type = types.loaOf types.optionSet;
-              options = [ bindMountOpts ];
+              type = with types; loaOf (submodule bindMountOpts);
               default = {};
               example = { "/home" = { hostPath = "/home/alice";
                                       isReadOnly = false; };
@@ -407,21 +556,33 @@ in
                 '';
             };
 
+            allowedDevices = mkOption {
+              type = with types; listOf (submodule allowedDeviceOpts);
+              default = [];
+              example = [ { node = "/dev/net/tun"; modifier = "rw"; } ];
+              description = ''
+                A list of device nodes to which the containers has access to.
+              '';
+            };
+
+            tmpfs = mkOption {
+              type = types.listOf types.str;
+              default = [];
+              example = [ "/var" ];
+              description = ''
+                Mounts a set of tmpfs file systems into the container.
+                Multiple paths can be specified.
+                Valid items must conform to the --tmpfs argument
+                of systemd-nspawn. See systemd-nspawn(1) for details.
+              '';
+            };
+
           } // networkOptions;
 
           config = mkMerge
-            [ (mkIf options.config.isDefined {
-                path = (import ../../lib/eval-config.nix {
-                  inherit system;
-                  modules =
-                    let extraConfig =
-                      { boot.isContainer = true;
-                        networking.hostName = mkDefault name;
-                        networking.useDHCP = false;
-                      };
-                    in [ extraConfig config.config ];
-                  prefix = [ "containers" name ];
-                }).config.system.build.toplevel;
+            [
+              (mkIf options.config.isDefined {
+                path = config.config.system.build.toplevel;
               })
             ];
         }));
@@ -446,7 +607,7 @@ in
         containers.  Each container appears as a service
         <literal>container-<replaceable>name</replaceable></literal>
         on the host system, allowing it to be started and stopped via
-        <command>systemctl</command> .
+        <command>systemctl</command>.
       '';
     };
 
@@ -465,11 +626,11 @@ in
       environment.INSTANCE = "%i";
       environment.root = "/var/lib/containers/%i";
 
-      preStart = preStartScript {};
+      preStart = preStartScript dummyConfig;
 
-      script = startScript {};
+      script = startScript dummyConfig;
 
-      postStart = postStartScript {};
+      postStart = postStartScript dummyConfig;
 
       preStop =
         ''
@@ -482,66 +643,48 @@ in
 
       restartIfChanged = false;
 
-      serviceConfig = {
-        ExecReload = pkgs.writeScript "reload-container"
-          ''
-            #! ${pkgs.stdenv.shell} -e
-            ${pkgs.nixos-container}/bin/nixos-container run "$INSTANCE" -- \
-              bash --login -c "''${SYSTEM_PATH:-/nix/var/nix/profiles/system}/bin/switch-to-configuration test"
-          '';
-
-        SyslogIdentifier = "container %i";
-
-        EnvironmentFile = "-/etc/containers/%i.conf";
-
-        Type = "notify";
-
-        # Note that on reboot, systemd-nspawn returns 133, so this
-        # unit will be restarted. On poweroff, it returns 0, so the
-        # unit won't be restarted.
-        RestartForceExitStatus = "133";
-        SuccessExitStatus = "133";
-
-        Restart = "on-failure";
-
-        # Hack: we don't want to kill systemd-nspawn, since we call
-        # "machinectl poweroff" in preStop to shut down the
-        # container cleanly. But systemd requires sending a signal
-        # (at least if we want remaining processes to be killed
-        # after the timeout). So send an ignored signal.
-        KillMode = "mixed";
-        KillSignal = "WINCH";
-
-        DevicePolicy = "closed";
-      };
+      serviceConfig = serviceDirectives dummyConfig;
     };
   in {
     systemd.services = listToAttrs (filter (x: x.value != null) (
       # The generic container template used by imperative containers
       [{ name = "container@"; value = unit; }]
       # declarative containers
-      ++ (mapAttrsToList (name: cfg: nameValuePair "container@${name}" (
-        unit // {
-          preStart = preStartScript cfg;
-          script = startScript cfg;
-          postStart = postStartScript cfg;
-        } // (
-        if cfg.autoStart then
-          {
-            wantedBy = [ "multi-user.target" ];
-            wants = [ "network.target" ];
-            after = [ "network.target" ];
-            restartTriggers = [ cfg.path ];
-            reloadIfChanged = true;
-          }
-        else {})
+      ++ (mapAttrsToList (name: cfg: nameValuePair "container@${name}" (let
+          config = cfg // (
+          if cfg.enableTun then
+            {
+              allowedDevices = cfg.allowedDevices
+                ++ [ { node = "/dev/net/tun"; modifier = "rw"; } ];
+              additionalCapabilities = cfg.additionalCapabilities
+                ++ [ "CAP_NET_ADMIN" ];
+            }
+          else {});
+        in
+          unit // {
+            preStart = preStartScript config;
+            script = startScript config;
+            postStart = postStartScript config;
+            serviceConfig = serviceDirectives config;
+          } // (
+          if config.autoStart then
+            {
+              wantedBy = [ "multi-user.target" ];
+              wants = [ "network.target" ];
+              after = [ "network.target" ];
+              restartTriggers = [ config.path ];
+              reloadIfChanged = true;
+            }
+          else {})
       )) config.containers)
     ));
 
     # Generate a configuration file in /etc/containers for each
     # container so that container@.target can get the container
     # configuration.
-    environment.etc = mapAttrs' (name: cfg: nameValuePair "containers/${name}.conf"
+    environment.etc =
+      let mkPortStr = p: p.protocol + ":" + (toString p.hostPort) + ":" + (if p.containerPort == null then toString p.hostPort else toString p.containerPort); 
+      in mapAttrs' (name: cfg: nameValuePair "containers/${name}.conf"
       { text =
           ''
             SYSTEM_PATH=${cfg.path}
@@ -549,6 +692,9 @@ in
               PRIVATE_NETWORK=1
               ${optionalString (cfg.hostBridge != null) ''
                 HOST_BRIDGE=${cfg.hostBridge}
+              ''}
+              ${optionalString (length cfg.forwardPorts > 0) ''
+                HOST_PORT=${concatStringsSep "," (map mkPortStr cfg.forwardPorts)}
               ''}
               ${optionalString (cfg.hostAddress != null) ''
                 HOST_ADDRESS=${cfg.hostAddress}
@@ -564,6 +710,7 @@ in
               ''}
             ''}
             INTERFACES="${toString cfg.interfaces}"
+            MACVLANS="${toString cfg.macvlans}"
             ${optionalString cfg.autoStart ''
               AUTO_START=1
             ''}
@@ -574,10 +721,10 @@ in
     # Generate /etc/hosts entries for the containers.
     networking.extraHosts = concatStrings (mapAttrsToList (name: cfg: optionalString (cfg.localAddress != null)
       ''
-        ${cfg.localAddress} ${name}.containers
+        ${head (splitString "/" cfg.localAddress)} ${name}.containers
       '') config.containers);
 
-    networking.dhcpcd.denyInterfaces = [ "ve-*" ];
+    networking.dhcpcd.denyInterfaces = [ "ve-*" "vb-*" ];
 
     environment.systemPackages = [ pkgs.nixos-container ];
   });

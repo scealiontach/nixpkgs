@@ -1,7 +1,7 @@
 let lib = import ../../../lib; in lib.makeOverridable (
 
 { system, name ? "stdenv", preHook ? "", initialPath, cc, shell
-, allowedRequisites ? null, extraAttrs ? {}, overrides ? (pkgs: {}), config
+, allowedRequisites ? null, extraAttrs ? {}, overrides ? (self: super: {}), config
 
 , # The `fetchurl' to use for downloading curl and its dependencies
   # (see all-packages.nix).
@@ -44,7 +44,7 @@ let
       throw "whitelistedLicenses and blacklistedLicenses are not mutually exclusive.";
 
   hasLicense = attrs:
-    builtins.hasAttr "meta" attrs && builtins.hasAttr "license" attrs.meta;
+    attrs ? meta.license;
 
   hasWhitelistedLicense = assert areLicenseListsValid; attrs:
     hasLicense attrs && builtins.elem attrs.meta.license whitelist;
@@ -75,6 +75,14 @@ let
     isUnfree (lib.lists.toList attrs.meta.license) &&
     !allowUnfreePredicate attrs;
 
+  allowInsecureDefaultPredicate = x: builtins.elem x.name (config.permittedInsecurePackages or []);
+  allowInsecurePredicate = x: (config.allowUnfreePredicate or allowInsecureDefaultPredicate) x;
+
+  hasAllowedInsecure = attrs:
+    (attrs.meta.knownVulnerabilities or []) == [] ||
+    allowInsecurePredicate attrs ||
+    builtins.getEnv "NIXPKGS_ALLOW_INSECURE" == "1";
+
   showLicense = license: license.shortName or "unknown";
 
   defaultNativeBuildInputs = extraBuildInputs ++
@@ -89,8 +97,16 @@ let
       cc
     ];
 
-  # Add a utility function to produce derivations that use this
-  # stdenv and its shell.
+  # `mkDerivation` wraps the builtin `derivation` function to
+  # produce derivations that use this stdenv and its shell.
+  #
+  # See also:
+  #
+  # * https://nixos.org/nixpkgs/manual/#sec-using-stdenv
+  #   Details on how to use this mkDerivation function
+  #
+  # * https://nixos.org/nix/manual/#ssec-derivation
+  #   Explanation about derivations in general
   mkDerivation =
     { buildInputs ? []
     , nativeBuildInputs ? []
@@ -107,7 +123,19 @@ let
     , sandboxProfile ? ""
     , propagatedSandboxProfile ? ""
     , ... } @ attrs:
-    let
+    let # Rename argumemnts to avoid cycles
+      buildInputs__ = buildInputs;
+      nativeBuildInputs__ = nativeBuildInputs;
+      propagatedBuildInputs__ = propagatedBuildInputs;
+      propagatedNativeBuildInputs__ = propagatedNativeBuildInputs;
+    in let
+      getNativeDrv = drv: drv.nativeDrv or drv;
+      getCrossDrv = drv: drv.crossDrv or drv;
+      nativeBuildInputs = map getNativeDrv nativeBuildInputs__;
+      buildInputs = map getCrossDrv buildInputs__;
+      propagatedBuildInputs = map getCrossDrv propagatedBuildInputs__;
+      propagatedNativeBuildInputs = map getNativeDrv propagatedNativeBuildInputs__;
+    in let
       pos' =
         if pos != null then
           pos
@@ -117,25 +145,62 @@ let
           builtins.unsafeGetAttrPos "name" attrs;
       pos'' = if pos' != null then "‘" + pos'.file + ":" + toString pos'.line + "’" else "«unknown-file»";
 
-      throwEvalHelp = { reason, errormsg }:
-        # uppercase the first character of string s
-        let up = s: with lib;
-          let cs = lib.stringToCharacters s;
-          in concatStrings (singleton (toUpper (head cs)) ++ tail cs);
-        in
-        assert builtins.elem reason ["unfree" "broken" "blacklisted"];
 
-        throw ("Package ‘${attrs.name or "«name-missing»"}’ in ${pos''} ${errormsg}, refusing to evaluate."
-        + (lib.strings.optionalString (reason != "blacklisted") ''
-
+      remediation = {
+        unfree = remediate_whitelist "Unfree";
+        broken = remediate_whitelist "Broken";
+        blacklisted = x: "";
+        insecure = remediate_insecure;
+      };
+      remediate_whitelist = allow_attr: attrs:
+        ''
           a) For `nixos-rebuild` you can set
-            { nixpkgs.config.allow${up reason} = true; }
+            { nixpkgs.config.allow${allow_attr} = true; }
           in configuration.nix to override this.
 
-          b) For `nix-env`, `nix-build` or any other Nix command you can add
-            { allow${up reason} = true; }
-          to ~/.nixpkgs/config.nix.
-        ''));
+          b) For `nix-env`, `nix-build`, `nix-shell` or any other Nix command you can add
+            { allow${allow_attr} = true; }
+          to ~/.config/nixpkgs/config.nix.
+        '';
+
+      remediate_insecure = attrs:
+        ''
+
+          Known issues:
+
+        '' + (lib.fold (issue: default: "${default} - ${issue}\n") "" attrs.meta.knownVulnerabilities) + ''
+
+          You can install it anyway by whitelisting this package, using the
+          following methods:
+
+          a) for `nixos-rebuild` you can add ‘${attrs.name or "«name-missing»"}’ to
+             `nixpkgs.config.permittedInsecurePackages` in the configuration.nix,
+             like so:
+
+               {
+                 nixpkgs.config.permittedInsecurePackages = [
+                   "${attrs.name or "«name-missing»"}"
+                 ];
+               }
+
+          b) For `nix-env`, `nix-build`, `nix-shell` or any other Nix command you can add
+          ‘${attrs.name or "«name-missing»"}’ to `permittedInsecurePackages` in
+          ~/.config/nixpkgs/config.nix, like so:
+
+               {
+                 permittedInsecurePackages = [
+                   "${attrs.name or "«name-missing»"}"
+                 ];
+               }
+
+        '';
+
+
+      throwEvalHelp = { reason , errormsg ? "" }:
+        throw (''
+          Package ‘${attrs.name or "«name-missing»"}’ in ${pos''} ${errormsg}, refusing to evaluate.
+
+          '' + ((builtins.getAttr reason remediation) attrs));
 
       # Check if a derivation is valid, that is whether it passes checks for
       # e.g brokenness or license.
@@ -152,14 +217,20 @@ let
           { valid = false; reason = "broken"; errormsg = "is marked as broken"; }
         else if !allowBroken && attrs.meta.platforms or null != null && !lib.lists.elem result.system attrs.meta.platforms then
           { valid = false; reason = "broken"; errormsg = "is not supported on ‘${result.system}’"; }
+        else if !(hasAllowedInsecure attrs) then
+          { valid = false; reason = "insecure"; errormsg = "is marked as insecure"; }
         else { valid = true; };
 
       outputs' =
         outputs ++
         (if separateDebugInfo then assert result.isLinux; [ "debug" ] else []);
 
-      buildInputs' = buildInputs ++
+      buildInputs' = lib.chooseDevOutputs buildInputs ++
         (if separateDebugInfo then [ ../../build-support/setup-hooks/separate-debug-info.sh ] else []);
+
+      nativeBuildInputs' = lib.chooseDevOutputs nativeBuildInputs;
+      propagatedBuildInputs' = lib.chooseDevOutputs propagatedBuildInputs;
+      propagatedNativeBuildInputs' = lib.chooseDevOutputs propagatedNativeBuildInputs;
 
     in
 
@@ -176,13 +247,13 @@ let
            "sandboxProfile" "propagatedSandboxProfile"])
         // (let
           computedSandboxProfile =
-            lib.concatMap (input: input.__propagatedSandboxProfile or []) (extraBuildInputs ++ buildInputs ++ nativeBuildInputs);
+            lib.concatMap (input: input.__propagatedSandboxProfile or []) (extraBuildInputs ++ buildInputs' ++ nativeBuildInputs');
           computedPropagatedSandboxProfile =
-            lib.concatMap (input: input.__propagatedSandboxProfile or []) (propagatedBuildInputs ++ propagatedNativeBuildInputs);
+            lib.concatMap (input: input.__propagatedSandboxProfile or []) (propagatedBuildInputs' ++ propagatedNativeBuildInputs');
           computedImpureHostDeps =
-            lib.unique (lib.concatMap (input: input.__propagatedImpureHostDeps or []) (extraBuildInputs ++ buildInputs ++ nativeBuildInputs));
+            lib.unique (lib.concatMap (input: input.__propagatedImpureHostDeps or []) (extraBuildInputs ++ buildInputs' ++ nativeBuildInputs'));
           computedPropagatedImpureHostDeps =
-            lib.unique (lib.concatMap (input: input.__propagatedImpureHostDeps or []) (propagatedBuildInputs ++ propagatedNativeBuildInputs));
+            lib.unique (lib.concatMap (input: input.__propagatedImpureHostDeps or []) (propagatedBuildInputs' ++ propagatedNativeBuildInputs'));
         in
         {
           builder = attrs.realBuilder or shell;
@@ -194,17 +265,17 @@ let
 
           # Inputs built by the cross compiler.
           buildInputs = if crossConfig != null then buildInputs' else [];
-          propagatedBuildInputs = if crossConfig != null then propagatedBuildInputs else [];
+          propagatedBuildInputs = if crossConfig != null then propagatedBuildInputs' else [];
           # Inputs built by the usual native compiler.
-          nativeBuildInputs = nativeBuildInputs
+          nativeBuildInputs = nativeBuildInputs'
             ++ lib.optionals (crossConfig == null) buildInputs'
             ++ lib.optional
                 (result.isCygwin
                   || (crossConfig != null && lib.hasSuffix "mingw32" crossConfig))
                 ../../build-support/setup-hooks/win-dll-link.sh
             ;
-          propagatedNativeBuildInputs = propagatedNativeBuildInputs ++
-            (if crossConfig == null then propagatedBuildInputs else []);
+          propagatedNativeBuildInputs = propagatedNativeBuildInputs' ++
+            (if crossConfig == null then propagatedBuildInputs' else []);
         } // ifDarwin {
           # TODO: remove lib.unique once nix has a list canonicalization primitive
           __sandboxProfile =
@@ -223,6 +294,7 @@ let
           outputs = outputs';
         } else { })))) (
       {
+        overrideAttrs = f: mkDerivation (attrs // (f attrs));
         # The meta attribute is passed in the resulting attribute set,
         # but it's not part of the actual derivation, i.e., it's not
         # passed to the builder and is not a dependency.  But since we
@@ -274,7 +346,10 @@ let
 
     // rec {
 
-      meta.description = "The default build environment for Unix packages in Nixpkgs";
+      meta = {
+        description = "The default build environment for Unix packages in Nixpkgs";
+        platforms = lib.platforms.all;
+      };
 
       # Utility flags to test the type of platform.
       isDarwin = system == "x86_64-darwin";
@@ -284,6 +359,7 @@ let
              || system == "armv5tel-linux"
              || system == "armv6l-linux"
              || system == "armv7l-linux"
+             || system == "aarch64-linux"
              || system == "mips64el-linux";
       isGNU = system == "i686-gnu"; # GNU/Hurd
       isGlibc = isGNU # useful for `stdenvNative'
@@ -315,12 +391,14 @@ let
              || system == "x86_64-openbsd"
              || system == "x86_64-cygwin"
              || system == "x86_64-solaris"
+             || system == "aarch64-linux"
              || system == "mips64el-linux";
       isMips = system == "mips-linux"
             || system == "mips64el-linux";
       isArm = system == "armv5tel-linux"
            || system == "armv6l-linux"
            || system == "armv7l-linux";
+      isAarch64 = system == "aarch64-linux";
       isBigEndian = system == "powerpc-linux";
 
       # Whether we should run paxctl to pax-mark binaries.

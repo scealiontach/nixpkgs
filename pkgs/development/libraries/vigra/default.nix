@@ -1,7 +1,10 @@
 { stdenv, fetchurl, boost, cmake, doxygen, fftw, fftwSinglePrec, hdf5, ilmbase
-, libjpeg, libpng, libtiff, numpy, openexr, python }:
+, libjpeg, libpng, libtiff, openexr, python2Packages }:
 
-stdenv.mkDerivation rec {
+let
+  inherit (python2Packages) python numpy;
+  # Might want to use `python2.withPackages(ps: [ps.numpy]);` here...
+in stdenv.mkDerivation rec {
   name = "vigra-${version}";
   version = "1.10.0";
 
@@ -10,7 +13,7 @@ stdenv.mkDerivation rec {
     sha256 = "1y3yii8wnyz68n0mzcmjylwd6jchqa3l913v39l2zsd2rv5nyvs0";
   };
 
-  NIX_CFLAGS_COMPILE = "-I${ilmbase}/include/OpenEXR";
+  NIX_CFLAGS_COMPILE = "-I${ilmbase.dev}/include/OpenEXR";
 
   buildInputs = [ boost cmake fftw fftwSinglePrec hdf5 ilmbase libjpeg libpng
                   libtiff numpy openexr python ];

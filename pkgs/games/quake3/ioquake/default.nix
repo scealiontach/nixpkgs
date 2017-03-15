@@ -4,13 +4,13 @@
 
 stdenv.mkDerivation rec {
   name = "ioquake3-git-${version}";
-  version = "2016-04-05";
+  version = "2017-01-27";
 
   src = fetchFromGitHub {
     owner = "ioquake";
     repo = "ioq3";
-    rev = "1f6703821f11be9c711c6ee42371ab290dd12776";
-    sha256 = "0jbn4lv85khfcmn1dc3mrx7zxldj3p4cggx85hdfpiwmnsjl4w67";
+    rev = "468da0fabca2f21b811a501c184b986e270c5113";
+    sha256 = "14mhkqn6h2mbmz90j4ns1wp72ca5w9481sbyw2ving8xpw376i58";
   };
 
   nativeBuildInputs = [ which pkgconfig ];
@@ -29,7 +29,7 @@ stdenv.mkDerivation rec {
   '';
 
   meta = {
-    homepage = http://ioquake3.org/;
+    homepage = "http://ioquake3.org/";
     description = "First person shooter engine based on the Quake 3: Arena and Quake 3: Team Arena";
     license = lib.licenses.gpl2;
     platforms = lib.platforms.linux;

@@ -1,17 +1,16 @@
-{ stdenv, fetchurl, buildPythonApplication, pythonPackages, mygpoclient, intltool
-, ipodSupport ? true, libgpod
+{ stdenv, fetchurl, python2Packages, mygpoclient, intltool
+, ipodSupport ? false, libgpod
 , gnome3
 }:
 
-buildPythonApplication rec {
+python2Packages.buildPythonApplication rec {
   name = "gpodder-${version}";
-  namePrefix = "";
 
-  version = "3.9.0";
+  version = "3.9.1";
 
   src = fetchurl {
     url = "http://gpodder.org/src/${name}.tar.gz";
-    sha256 = "1ik954idi0ldnw0wrv7mm71smyb6x66332jxcaf1dxsl12ccm44l";
+    sha256 = "036p9vnkr3if0k548xhhjmcwdaimy3yd24s3xd8vzlp0wdzkzrhn";
   };
 
   postPatch = with stdenv.lib; ''
@@ -25,13 +24,13 @@ buildPythonApplication rec {
   '';
 
   buildInputs = [
-    intltool pythonPackages.coverage pythonPackages.minimock
+    intltool python2Packages.coverage python2Packages.minimock
     gnome3.gnome_themes_standard gnome3.defaultIconTheme
     gnome3.gsettings_desktop_schemas
   ];
 
-  propagatedBuildInputs = with pythonPackages; [
-    feedparser dbus mygpoclient sqlite3 pygtk eyeD3
+  propagatedBuildInputs = with python2Packages; [
+    feedparser dbus-python mygpoclient pygtk eyeD3
   ] ++ stdenv.lib.optional ipodSupport libgpod;
 
   checkPhase = ''

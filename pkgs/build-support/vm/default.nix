@@ -1,6 +1,7 @@
 { pkgs
 , kernel ? pkgs.linux
 , img ? "bzImage"
+, storeDir ? builtins.storeDir
 , rootModules ?
     [ "virtio_pci" "virtio_blk" "virtio_balloon" "virtio_rng" "ext4" "unix" "9p" "9pnet_virtio" "rtc_cmos" ]
 }:
@@ -123,12 +124,13 @@ rec {
     mkdir -p /fs/dev
     mount -o bind /dev /fs/dev
 
-    mkdir -p /fs/dev /fs/dev/shm
+    mkdir -p /fs/dev/shm /fs/dev/pts
     mount -t tmpfs -o "mode=1777" none /fs/dev/shm
+    mount -t devpts none /fs/dev/pts
 
     echo "mounting Nix store..."
-    mkdir -p /fs/nix/store
-    mount -t 9p store /fs/nix/store -o trans=virtio,version=9p2000.L,cache=loose
+    mkdir -p /fs${storeDir}
+    mount -t 9p store /fs${storeDir} -o trans=virtio,version=9p2000.L,cache=loose
 
     mkdir -p /fs/tmp /fs/run /fs/var
     mount -t tmpfs -o "mode=1777" none /fs/tmp
@@ -171,7 +173,7 @@ rec {
     # apparent KVM > 1.5.2 bug.
     ${pkgs.utillinux}/bin/hwclock -s
 
-    export NIX_STORE=/nix/store
+    export NIX_STORE=${storeDir}
     export NIX_BUILD_TOP=/tmp
     export TMPDIR=/tmp
     export PATH=/empty
@@ -219,7 +221,7 @@ rec {
       ${lib.optionalString (pkgs.stdenv.system == "x86_64-linux") "-cpu kvm64"} \
       -nographic -no-reboot \
       -device virtio-rng-pci \
-      -virtfs local,path=/nix/store,security_model=none,mount_tag=store \
+      -virtfs local,path=${storeDir},security_model=none,mount_tag=store \
       -virtfs local,path=$TMPDIR/xchg,security_model=none,mount_tag=xchg \
       -drive file=$diskImage,if=virtio,cache=unsafe,werror=report \
       -kernel ${kernel}/${img} \
@@ -239,6 +241,14 @@ rec {
     diskImage=''${diskImage:-/dev/null}
 
     eval "$preVM"
+
+    if [ "$enableParallelBuilding" = 1 ]; then
+      if [ ''${NIX_BUILD_CORES:-0} = 0 ]; then
+        QEMU_OPTS+=" -smp cpus=$(nproc)"
+      else
+        QEMU_OPTS+=" -smp cpus=$NIX_BUILD_CORES"
+      fi
+    fi
 
     # Write the command to start the VM to a file so that the user can
     # debug inside the VM if the build fails (when Nix is called with
@@ -261,9 +271,12 @@ rec {
       exit 1
     fi
 
-    eval "$postVM"
+    exitCode="$(cat xchg/in-vm-exit)"
+    if [ "$exitCode" != "0" ]; then
+      exit "$exitCode"
+    fi
 
-    exit $(cat xchg/in-vm-exit)
+    eval "$postVM"
   '';
 
 
@@ -294,7 +307,7 @@ rec {
 
   /* Run a derivation in a Linux virtual machine (using Qemu/KVM).  By
      default, there is no disk image; the root filesystem is a tmpfs,
-     and /nix/store is shared with the host (via the 9P protocol).
+     and the nix store is shared with the host (via the 9P protocol).
      Thus, any pure Nix derivation should run unmodified, e.g. the
      call
 
@@ -430,8 +443,8 @@ rec {
         chroot=$(type -tP chroot)
 
         # Make the Nix store available in /mnt, because that's where the RPMs live.
-        mkdir -p /mnt/nix/store
-        ${utillinux}/bin/mount -o bind /nix/store /mnt/nix/store
+        mkdir -p /mnt${storeDir}
+        ${utillinux}/bin/mount -o bind ${storeDir} /mnt${storeDir}
 
         # Newer distributions like Fedora 18 require /lib etc. to be
         # symlinked to /usr.
@@ -470,7 +483,7 @@ rec {
 
         rm /mnt/.debug
 
-        ${utillinux}/bin/umount /mnt/nix/store /mnt/tmp ${lib.optionalString unifiedSystemDir "/mnt/proc"}
+        ${utillinux}/bin/umount /mnt${storeDir} /mnt/tmp ${lib.optionalString unifiedSystemDir "/mnt/proc"}
         ${utillinux}/bin/umount /mnt
       '';
 
@@ -533,8 +546,7 @@ rec {
 
       # Hacky: RPM looks for <basename>.spec inside the tarball, so
       # strip off the hash.
-      stripHash "$src"
-      srcName="$strippedName"
+      srcName="$(stripHash "$src")"
       cp "$src" "$srcName" # `ln' doesn't work always work: RPM requires that the file is owned by root
 
       export HOME=/tmp/home
@@ -587,7 +599,7 @@ rec {
       buildCommand = ''
         ${createRootFS}
 
-        PATH=$PATH:${dpkg}/bin:${dpkg}/bin:${glibc.bin}/bin:${lzma.bin}/bin
+        PATH=$PATH:${stdenv.lib.makeBinPath [ dpkg dpkg glibc lzma ]}
 
         # Unpack the .debs.  We do this to prevent pre-install scripts
         # (which have lots of circular dependencies) from barfing.
@@ -601,8 +613,8 @@ rec {
         done
 
         # Make the Nix store available in /mnt, because that's where the .debs live.
-        mkdir -p /mnt/inst/nix/store
-        ${utillinux}/bin/mount -o bind /nix/store /mnt/inst/nix/store
+        mkdir -p /mnt/inst${storeDir}
+        ${utillinux}/bin/mount -o bind ${storeDir} /mnt/inst${storeDir}
         ${utillinux}/bin/mount -o bind /proc /mnt/proc
         ${utillinux}/bin/mount -o bind /dev /mnt/dev
 
@@ -650,7 +662,7 @@ rec {
 
         rm /mnt/.debug
 
-        ${utillinux}/bin/umount /mnt/inst/nix/store
+        ${utillinux}/bin/umount /mnt/inst${storeDir}
         ${utillinux}/bin/umount /mnt/proc
         ${utillinux}/bin/umount /mnt/dev
         ${utillinux}/bin/umount /mnt
@@ -854,7 +866,7 @@ rec {
       fullName = "Fedora 10 (i386)";
       packagesList = fetchurl {
         url = mirror://fedora/linux/releases/10/Everything/i386/os/repodata/beeea88d162e76993c25b9dd8139868274ee7fa1-primary.xml.gz;
-        sha1 = "beeea88d162e76993c25b9dd8139868274ee7fa1";
+        sha256 = "17lyvzqjsxw3ll7726dpg14f9jc2p3fz5cr5cwd8hp3rkm5nfclv";
       };
       urlPrefix = mirror://fedora/linux/releases/10/Everything/i386/os;
       packages = commonFedoraPackages ++ [ "cronie" "util-linux-ng" ];
@@ -865,7 +877,7 @@ rec {
       fullName = "Fedora 10 (x86_64)";
       packagesList = fetchurl {
         url = mirror://fedora/linux/releases/10/Everything/x86_64/os/repodata/7958210175e86b5cc843cf4bd0bc8659e445e261-primary.xml.gz;
-        sha1 = "7958210175e86b5cc843cf4bd0bc8659e445e261";
+        sha256 = "02pzqmb26zmmzdni11dip3bar4kr54ddsrq9z4vda7ldwwkqd3py";
       };
       urlPrefix = mirror://fedora/linux/releases/10/Everything/x86_64/os;
       archs = ["noarch" "x86_64"];
@@ -1124,6 +1136,58 @@ rec {
       unifiedSystemDir = true;
     };
 
+    fedora24i386 = {
+      name = "fedora-24-i386";
+      fullName = "Fedora 24 (i386)";
+      packagesList = fetchurl rec {
+        url = "mirror://fedora/linux/releases/24/Everything/i386/os/repodata/${sha256}-primary.xml.gz";
+        sha256 = "6928e251628da7a74b79180739a43784e534eaa744ba4bcb18c847dff541f344";
+      };
+      urlPrefix = mirror://fedora/linux/releases/24/Everything/i386/os;
+      archs = ["noarch" "i386" "i586" "i686"];
+      packages = commonFedoraPackages ++ [ "cronie" "util-linux" ];
+      unifiedSystemDir = true;
+    };
+
+    fedora24x86_64 = {
+      name = "fedora-24-x86_64";
+      fullName = "Fedora 24 (x86_64)";
+      packagesList = fetchurl rec {
+        url = "mirror://fedora/linux/releases/24/Everything/x86_64/os/repodata/${sha256}-primary.xml.gz";
+        sha256 = "8dcc989396ed27fadd252ba9b655019934bc3d9915f186f1f2f27e71eba7b42f";
+      };
+      urlPrefix = mirror://fedora/linux/releases/24/Everything/x86_64/os;
+      archs = ["noarch" "x86_64"];
+      packages = commonFedoraPackages ++ [ "cronie" "util-linux" ];
+      unifiedSystemDir = true;
+    };
+
+    fedora25i386 = {
+      name = "fedora-25-i386";
+      fullName = "Fedora 25 (i386)";
+      packagesList = fetchurl rec {
+        url = "mirror://fedora/linux/releases/25/Everything/i386/os/repodata/${sha256}-primary.xml.gz";
+        sha256 = "4d399e5eebb8d543d50e2da274348280fae07a6efcc469491784582b39d73bba";
+      };
+      urlPrefix = mirror://fedora/linux/releases/25/Everything/i386/os;
+      archs = ["noarch" "i386" "i586" "i686"];
+      packages = commonFedoraPackages ++ [ "cronie" "util-linux" ];
+      unifiedSystemDir = true;
+    };
+
+    fedora25x86_64 = {
+      name = "fedora-25-x86_64";
+      fullName = "Fedora 25 (x86_64)";
+      packagesList = fetchurl rec {
+        url = "mirror://fedora/linux/releases/25/Everything/x86_64/os/repodata/${sha256}-primary.xml.gz";
+        sha256 = "eaea04bff7327c49d90240992dff2be6d451a1758ef83e94825f23d4ff27e868";
+      };
+      urlPrefix = mirror://fedora/linux/releases/25/Everything/x86_64/os;
+      archs = ["noarch" "x86_64"];
+      packages = commonFedoraPackages ++ [ "cronie" "util-linux" ];
+      unifiedSystemDir = true;
+    };
+
     opensuse103i386 = {
       name = "opensuse-10.3-i586";
       fullName = "openSUSE 10.3 (i586)";
@@ -1261,7 +1325,7 @@ rec {
       fullName = "Ubuntu 7.10 Gutsy (i386)";
       packagesList = fetchurl {
         url = mirror://ubuntu/dists/gutsy/main/binary-i386/Packages.bz2;
-        sha1 = "8b52ee3d417700e2b2ee951517fa25a8792cabfd";
+        sha256 = "0fmac8svxq86a4w878g6syczvy5ff4jrdc1gajd3xd8z0dypnw27";
       };
       urlPrefix = mirror://ubuntu;
       packages = commonDebianPackages;
@@ -1272,7 +1336,7 @@ rec {
       fullName = "Ubuntu 8.04 Hardy (i386)";
       packagesList = fetchurl {
         url = mirror://ubuntu/dists/hardy/main/binary-i386/Packages.bz2;
-        sha1 = "db74581ee75cb3bee2a8ae62364e97956c723259";
+        sha256 = "19132nc9fhdfmgmvn834lk0d8c0n3jv0ndz9inyynh9k6pc8b5hd";
       };
       urlPrefix = mirror://ubuntu;
       packages = commonDebianPackages;
@@ -1283,7 +1347,7 @@ rec {
       fullName = "Ubuntu 8.04 Hardy (amd64)";
       packagesList = fetchurl {
         url = mirror://ubuntu/dists/hardy/main/binary-amd64/Packages.bz2;
-        sha1 = "d1f1d2b3cc62533d6e4337f2696a5d27235d1f28";
+        sha256 = "1xjcgh0ydixmim7kgxss0mhfw0sibpgygvgsyac4bdz9m503sj3h";
       };
       urlPrefix = mirror://ubuntu;
       packages = commonDebianPackages;
@@ -1347,7 +1411,7 @@ rec {
     ubuntu910x86_64 = {
       name = "ubuntu-9.10-karmic-amd64";
       fullName = "Ubuntu 9.10 Karmic (amd64)";
-     packagesList = fetchurl {
+      packagesList = fetchurl {
         url = mirror://ubuntu/dists/karmic/main/binary-amd64/Packages.bz2;
         sha256 = "3a604fcb0c135eeb8b95da3e90a8fd4cfeff519b858cd3c9e62ea808cb9fec40";
       };
@@ -1763,6 +1827,40 @@ rec {
       packages = commonDebPackages ++ [ "diffutils" "libc-bin" ];
     };
 
+    ubuntu1610i386 = {
+      name = "ubuntu-16.10-yakkety-i386";
+      fullName = "Ubuntu 16.10 Yakkety (i386)";
+      packagesLists =
+        [ (fetchurl {
+            url = mirror://ubuntu/dists/yakkety/main/binary-i386/Packages.xz;
+            sha256 = "da811f582779a969f738f2366c17e075cf0da3c4f2a4ed1926093a2355fd72ba";
+          })
+          (fetchurl {
+            url = mirror://ubuntu/dists/yakkety/universe/binary-i386/Packages.xz;
+            sha256 = "5162b0a87173cd5dea7ce2273788befe36f38089d44a2379ed9dd92f76c6b2aa";
+          })
+        ];
+      urlPrefix = mirror://ubuntu;
+      packages = commonDebPackages ++ [ "diffutils" "libc-bin" ];
+    };
+
+    ubuntu1610x86_64 = {
+      name = "ubuntu-16.10-yakkety-amd64";
+      fullName = "Ubuntu 16.10 Yakkety (amd64)";
+      packagesList =
+        [ (fetchurl {
+            url = mirror://ubuntu/dists/yakkety/main/binary-amd64/Packages.xz;
+            sha256 = "356c4cfab0d7f77b75c473cd78b22ee7288f63b24c9739049924dc081dd2e3d1";
+          })
+          (fetchurl {
+            url = mirror://ubuntu/dists/yakkety/universe/binary-amd64/Packages.xz;
+            sha256 = "a72660f8feffd6978e3b9328c6259b5387ac0b4f33d1029e4a17091ceb5057e6";
+          })
+        ];
+      urlPrefix = mirror://ubuntu;
+      packages = commonDebPackages ++ [ "diffutils" "libc-bin" ];
+    };
+
     debian40i386 = {
       name = "debian-4.0r9-etch-i386";
       fullName = "Debian 4.0r9 Etch (i386)";
@@ -1856,22 +1954,22 @@ rec {
     };
 
     debian8i386 = {
-      name = "debian-8.5-jessie-i386";
-      fullName = "Debian 8.5 Jessie (i386)";
+      name = "debian-8.7-jessie-i386";
+      fullName = "Debian 8.7 Jessie (i386)";
       packagesList = fetchurl {
         url = mirror://debian/dists/jessie/main/binary-i386/Packages.xz;
-        sha256 = "f87a1ee673b335c28cb6ac87be61d6ef20f32dd847835c2bb7d400a00a464c7f";
+        sha256 = "71cacb934dc4ab2e67a5ed215ccbc9836cf8d95687edec7e7fe8d3916e3b3fe8";
       };
       urlPrefix = mirror://debian;
       packages = commonDebianPackages;
     };
 
     debian8x86_64 = {
-      name = "debian-8.5-jessie-amd64";
-      fullName = "Debian 8.5 Jessie (amd64)";
+      name = "debian-8.7-jessie-amd64";
+      fullName = "Debian 8.7 Jessie (amd64)";
       packagesList = fetchurl {
         url = mirror://debian/dists/jessie/main/binary-amd64/Packages.xz;
-        sha256 = "df6aea15d5547ae8dc6d7ceadc8bf6499bc5a3907d13231f811bf3c1c22474ef";
+        sha256 = "b4cfbaaef31f05ce1726d00f0a173f5b6f33a9192513302319a49848884a17f3";
       };
       urlPrefix = mirror://debian;
       packages = commonDebianPackages;

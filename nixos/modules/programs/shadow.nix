@@ -99,15 +99,17 @@ in
         groupdel = { rootOK = true; };
         login = { startSession = true; allowNullPassword = true; showMotd = true; updateWtmp = true; };
         chpasswd = { rootOK = true; };
-        chgpasswd = { rootOK = true; };
       };
 
-    security.setuidPrograms = [ "su" "chfn" ]
-      ++ lib.optionals config.users.mutableUsers
-      [ "passwd" "sg" "newgrp"
-        "newuidmap" "newgidmap" # new in shadow 4.2.x
-      ];
-
+    security.wrappers = {
+      su.source        = "${pkgs.shadow.su}/bin/su";
+      chfn.source      = "${pkgs.shadow.out}/bin/chfn";
+      newuidmap.source = "${pkgs.shadow.out}/bin/newuidmap";
+      newgidmap.source = "${pkgs.shadow.out}/bin/newgidmap";
+    } // (if config.users.mutableUsers then {
+      passwd.source    = "${pkgs.shadow.out}/bin/passwd";
+      sg.source        = "${pkgs.shadow.out}/bin/sg";
+      newgrp.source    = "${pkgs.shadow.out}/bin/newgrp";
+    } else {});
   };
-
 }

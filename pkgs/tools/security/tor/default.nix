@@ -1,26 +1,33 @@
-{ stdenv, fetchurl, libevent, openssl, zlib, torsocks, libseccomp }:
+{ stdenv, fetchurl, pkgconfig, libevent, openssl, zlib, torsocks
+, libseccomp, systemd, libcap
+}:
 
 stdenv.mkDerivation rec {
-  name = "tor-0.2.7.6";
+  name = "tor-0.2.9.10";
 
   src = fetchurl {
-    url = "https://archive.torproject.org/tor-package-archive/${name}.tar.gz";
-    sha256 = "0p8hjlfi8dwghlyjif5s0q98cmpgz9kn9jja25430l04z5wqcfj9";
+    url = "https://dist.torproject.org/${name}.tar.gz";
+    sha256 = "0h8kpn42mgpkzmnga143hi8nh0ai65ypxh7qhkwbb15j3wz2h4fn";
   };
 
-  # Note: torsocks is specified as a dependency, as the distributed
-  # 'torify' wrapper attempts to use it; although there is no
-  # ./configure time check for any of this.
-  buildInputs = [ libevent openssl zlib torsocks ] ++
-    stdenv.lib.optional stdenv.isLinux libseccomp;
+  outputs = [ "out" "geoip" ];
+
+  nativeBuildInputs = [ pkgconfig ];
+  buildInputs = [ libevent openssl zlib ] ++
+    stdenv.lib.optionals stdenv.isLinux [ libseccomp systemd libcap ];
 
   NIX_CFLAGS_LINK = stdenv.lib.optionalString stdenv.cc.isGNU "-lgcc_s";
 
-  # Patch 'torify' to point directly to torsocks.
-  patchPhase = ''
+  postPatch = ''
     substituteInPlace contrib/client-tools/torify \
       --replace 'pathfind torsocks' true          \
       --replace 'exec torsocks' 'exec ${torsocks}/bin/torsocks'
+  '';
+
+  postInstall = ''
+    mkdir -p $geoip/share/tor
+    mv $out/share/tor/geoip{,6} $geoip/share/tor
+    rm -rf $out/share/tor
   '';
 
   doCheck = true;

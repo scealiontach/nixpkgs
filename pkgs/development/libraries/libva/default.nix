@@ -4,14 +4,15 @@
 }:
 
 stdenv.mkDerivation rec {
-  name = "libva-1.7.0";
+  name = "libva-${version}";
+  version = "1.7.3";
 
   src = fetchurl {
     url = "http://www.freedesktop.org/software/vaapi/releases/libva/${name}.tar.bz2";
-    sha256 = "0py9igf4kicj7ji22bjawkpd6my013qpg0s4ir2np9l1rk5vr2d6";
+    sha256 = "1ndrf136rlw03xag7j1xpmf9015d1h0dpnv6v587jnh6k2a17g12";
   };
 
-  outputs = [ "dev" "out" "bin" ];
+  outputs = [ "bin" "dev" "out" ];
 
   nativeBuildInputs = [ pkgconfig ];
 
@@ -19,10 +20,9 @@ stdenv.mkDerivation rec {
     ++ lib.optionals (!minimal) [ libva libX11 libXext libXfixes wayland libffi mesa_noglu ];
   # TODO: share libs between minimal and !minimal - perhaps just symlink them
 
-  configureFlags = lib.optionals (!minimal) [
-    "--with-drivers-path=${mesa_noglu.driverLink}/lib/dri"
-    "--enable-glx"
-  ];
+  configureFlags =
+    [ "--with-drivers-path=${mesa_noglu.driverLink}/lib/dri" ] ++
+    lib.optionals (!minimal) [ "--enable-glx" ];
 
   installFlags = [ "dummy_drv_video_ladir=$(out)/lib/dri" ];
 

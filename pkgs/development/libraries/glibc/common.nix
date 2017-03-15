@@ -10,9 +10,8 @@ cross:
 , preConfigure ? "", ... }@args:
 
 let
-
-  version = "2.23";
-  sha256 = "1lk9a8jv5kyx8hp0wmfzjyk047q95ybyjqbyw5idl7414jxqml1b";
+  version = "2.25";
+  sha256 = "067bd9bb3390e79aa45911537d13c3721f1d9d3769931a30c2681bfee66f23a0";
 in
 
 assert cross != null -> gccCross != null;
@@ -49,12 +48,6 @@ stdenv.mkDerivation ({
          "/bin:/usr/bin", which is inappropriate on NixOS machines. This
          patch extends the search path by "/run/current-system/sw/bin". */
       ./fix_path_attribute_in_getconf.patch
-
-      ./cve-2016-3075.patch
-      ./glob-simplify-interface.patch
-      ./cve-2016-1234.patch
-      ./cve-2016-3706.patch
-      ./fix_warnings.patch
     ];
 
   postPatch =
@@ -89,8 +82,7 @@ stdenv.mkDerivation ({
       "--enable-add-ons"
       "--enable-obsolete-rpc"
       "--sysconfdir=/etc"
-      "--localedir=/var/run/current-system/sw/lib/locale"
-      "libc_cv_ssp=no"
+      "--enable-stackguard-randomization"
       (if linuxHeaders != null
        then "--with-headers=${linuxHeaders}/include"
        else "--without-headers")
@@ -101,7 +93,7 @@ stdenv.mkDerivation ({
       "--enable-kernel=2.6.32"
     ] ++ lib.optionals (cross != null) [
       (if cross.withTLS then "--with-tls" else "--without-tls")
-      (if cross.float == "soft" then "--without-fp" else "--with-fp")
+      (if cross ? float && cross.float == "soft" then "--without-fp" else "--with-fp")
     ] ++ lib.optionals (cross != null
           && cross.platform ? kernelMajor
           && cross.platform.kernelMajor == "2.6") [
@@ -118,7 +110,7 @@ stdenv.mkDerivation ({
 
   installFlags = [ "sysconfdir=$(out)/etc" ];
 
-  outputs = [ "dev" "out" "bin" "static" ];
+  outputs = [ "out" "bin" "dev" "static" ];
 
   buildInputs = lib.optionals (cross != null) [ gccCross ]
     ++ lib.optionals withGd [ gd libpng ];
@@ -146,7 +138,7 @@ stdenv.mkDerivation ({
     lib.optionalString (cross != null) "-${cross.config}";
 
   src = fetchurl {
-    url = "mirror://gnu/glibc/glibc-${version}.tar.gz";
+    url = "mirror://gnu/glibc/glibc-${version}.tar.xz";
     inherit sha256;
   };
 
@@ -189,6 +181,6 @@ stdenv.mkDerivation ({
     license = lib.licenses.lgpl2Plus;
 
     maintainers = [ lib.maintainers.eelco ];
-    #platforms = lib.platforms.linux;
+    platforms = lib.platforms.linux;
   } // meta;
 })

@@ -13,21 +13,29 @@ let
   cfgZfs = config.boot.zfs;
   cfgSnapshots = config.services.zfs.autoSnapshot;
   cfgSnapFlags = cfgSnapshots.flags;
+  cfgScrub = config.services.zfs.autoScrub;
 
   inInitrd = any (fs: fs == "zfs") config.boot.initrd.supportedFilesystems;
   inSystem = any (fs: fs == "zfs") config.boot.supportedFilesystems;
 
   enableAutoSnapshots = cfgSnapshots.enable;
-  enableZfs = inInitrd || inSystem || enableAutoSnapshots;
+  enableAutoScrub = cfgScrub.enable;
+  enableZfs = inInitrd || inSystem || enableAutoSnapshots || enableAutoScrub;
 
   kernel = config.boot.kernelPackages;
 
-  splKernelPkg = kernel.spl;
-  zfsKernelPkg = kernel.zfs;
-  zfsUserPkg = pkgs.zfs;
+  packages = if config.boot.zfs.enableUnstable then {
+    spl = kernel.splUnstable;
+    zfs = kernel.zfsUnstable;
+    zfsUser = pkgs.zfsUnstable;
+  } else {
+    spl = kernel.spl;
+    zfs = kernel.zfs;
+    zfsUser = pkgs.zfs;
+  };
 
   autosnapPkg = pkgs.zfstools.override {
-    zfs = zfsUserPkg;
+    zfs = packages.zfsUser;
   };
 
   zfsAutoSnap = "${autosnapPkg}/bin/zfs-auto-snapshot";
@@ -36,13 +44,11 @@ let
 
   fsToPool = fs: datasetToPool fs.device;
 
-  zfsFilesystems = filter (x: x.fsType == "zfs") (attrValues config.fileSystems);
-
-  isRoot = fs: fs.neededForBoot || elem fs.mountPoint [ "/" "/nix" "/nix/store" "/var" "/var/log" "/var/lib" "/etc" ];
+  zfsFilesystems = filter (x: x.fsType == "zfs") config.system.build.fileSystems;
 
   allPools = unique ((map fsToPool zfsFilesystems) ++ cfgZfs.extraPools);
 
-  rootPools = unique (map fsToPool (filter isRoot zfsFilesystems));
+  rootPools = unique (map fsToPool (filter fsNeededForBoot zfsFilesystems));
 
   dataPools = unique (filter (pool: !(elem pool rootPools)) allPools);
 
@@ -56,6 +62,18 @@ in
 
   options = {
     boot.zfs = {
+      enableUnstable = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Use the unstable zfs package. This might be an option, if the latest
+          kernel is not yet supported by a published release of ZFS. Enabling
+          this option will install a development version of ZFS on Linux. The
+          version will have already passed an extensive test suite, but it is
+          more likely to hit an undiscovered bug compared to running a released
+          version of ZFS on Linux.
+        '';
+      };
 
       extraPools = mkOption {
         type = types.listOf types.str;
@@ -201,6 +219,37 @@ in
         '';
       };
     };
+
+    services.zfs.autoScrub = {
+      enable = mkOption {
+        default = false;
+        type = types.bool;
+        description = ''
+          Enables periodic scrubbing of ZFS pools.
+        '';
+      };
+
+      interval = mkOption {
+        default = "Sun, 02:00";
+        type = types.str;
+        example = "daily";
+        description = ''
+          Systemd calendar expression when to scrub ZFS pools. See
+          <citerefentry><refentrytitle>systemd.time</refentrytitle>
+          <manvolnum>5</manvolnum></citerefentry>.
+        '';
+      };
+
+      pools = mkOption {
+        default = [];
+        type = types.listOf types.str;
+        example = [ "tank" ];
+        description = ''
+          List of ZFS pools to periodically scrub. If empty, all pools
+          will be scrubbed.
+        '';
+      };
+    };
   };
 
   ###### implementation
@@ -220,16 +269,16 @@ in
 
       boot = {
         kernelModules = [ "spl" "zfs" ] ;
-        extraModulePackages = [ splKernelPkg zfsKernelPkg ];
+        extraModulePackages = with packages; [ spl zfs ];
       };
 
       boot.initrd = mkIf inInitrd {
         kernelModules = [ "spl" "zfs" ];
         extraUtilsCommands =
           ''
-            copy_bin_and_libs ${zfsUserPkg}/sbin/zfs
-            copy_bin_and_libs ${zfsUserPkg}/sbin/zdb
-            copy_bin_and_libs ${zfsUserPkg}/sbin/zpool
+            copy_bin_and_libs ${packages.zfsUser}/sbin/zfs
+            copy_bin_and_libs ${packages.zfsUser}/sbin/zdb
+            copy_bin_and_libs ${packages.zfsUser}/sbin/zpool
           '';
         extraUtilsCommandsTest = mkIf inInitrd
           ''
@@ -247,8 +296,18 @@ in
               esac
             done
             ''] ++ (map (pool: ''
-            echo "importing root ZFS pool \"${pool}\"..."
-            zpool import -d ${cfgZfs.devNodes} -N $ZFS_FORCE "${pool}"
+            echo -n "importing root ZFS pool \"${pool}\"..."
+            trial=0
+            until msg="$(zpool import -d ${cfgZfs.devNodes} -N $ZFS_FORCE '${pool}' 2>&1)"; do
+              sleep 0.25
+              echo -n .
+              trial=$(($trial + 1))
+              if [[ $trial -eq 60 ]]; then
+                break
+              fi
+            done
+            echo
+            if [[ -n "$msg" ]]; then echo "$msg"; fi
         '') rootPools));
       };
 
@@ -256,18 +315,18 @@ in
         zfsSupport = true;
       };
 
-      environment.etc."zfs/zed.d".source = "${zfsUserPkg}/etc/zfs/zed.d/*";
+      environment.etc."zfs/zed.d".source = "${packages.zfsUser}/etc/zfs/zed.d/";
 
-      system.fsPackages = [ zfsUserPkg ];                  # XXX: needed? zfs doesn't have (need) a fsck
-      environment.systemPackages = [ zfsUserPkg ]
-        ++ optional enableAutoSnapshots autosnapPkg;       # so the user can run the command to see flags
+      system.fsPackages = [ packages.zfsUser ]; # XXX: needed? zfs doesn't have (need) a fsck
+      environment.systemPackages = [ packages.zfsUser ]
+        ++ optional enableAutoSnapshots autosnapPkg; # so the user can run the command to see flags
 
-      services.udev.packages = [ zfsUserPkg ];             # to hook zvol naming, etc.
-      systemd.packages = [ zfsUserPkg ];
+      services.udev.packages = [ packages.zfsUser ]; # to hook zvol naming, etc.
+      systemd.packages = [ packages.zfsUser ];
 
       systemd.services = let
         getPoolFilesystems = pool:
-          filter (x: x.fsType == "zfs" && (fsToPool x) == pool) (attrValues config.fileSystems);
+          filter (x: x.fsType == "zfs" && (fsToPool x) == pool) config.system.build.fileSystems;
 
         getPoolMounts = pool:
           let
@@ -290,7 +349,7 @@ in
               RemainAfterExit = true;
             };
             script = ''
-              zpool_cmd="${zfsUserPkg}/sbin/zpool"
+              zpool_cmd="${packages.zfsUser}/sbin/zpool"
               ("$zpool_cmd" list "${pool}" >/dev/null) || "$zpool_cmd" import -d ${cfgZfs.devNodes} -N ${optionalString cfgZfs.forceImportAll "-f"} "${pool}"
             '';
           };
@@ -306,7 +365,7 @@ in
               RemainAfterExit = true;
             };
             script = ''
-              ${zfsUserPkg}/sbin/zfs set nixos:shutdown-time="$(date)" "${pool}"
+              ${packages.zfsUser}/sbin/zfs set nixos:shutdown-time="$(date)" "${pool}"
             '';
           };
 
@@ -364,6 +423,32 @@ in
                                 };
                               };
                             }) snapshotNames);
+    })
+
+    (mkIf enableAutoScrub {
+      systemd.services.zfs-scrub = {
+        description = "ZFS pools scrubbing";
+        after = [ "zfs-import.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+        };
+        script = ''
+          ${packages.zfsUser}/bin/zpool scrub ${
+            if cfgScrub.pools != [] then
+              (concatStringsSep " " cfgScrub.pools)
+            else
+              "$(${packages.zfsUser}/bin/zpool list -H -o name)"
+            }
+        '';
+      };
+
+      systemd.timers.zfs-scrub = {
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnCalendar = cfgScrub.interval;
+          Persistent = "yes";
+        };
+      };
     })
   ];
 }

@@ -13,6 +13,8 @@ stdenv.mkDerivation rec {
     sha256 = "08q92sfdvkz47rx6qjn7qv57cmlpy7i7rgddapq5384mb413vjds";
   };
 
+  patches = [ ./gcc5.patch ];
+
   postPatch = ''
     sed -ri -e '
       s!^(#define\s+CFG_[A-Z]+_NAME\s+).*/!\1"'"$out"'/etc/john/!
@@ -28,7 +30,10 @@ stdenv.mkDerivation rec {
   configureFlags = [ "--disable-native-macro" ];
 
   buildInputs = [ openssl nss nspr kerberos gmp zlib libpcap re2 gcc ];
-  enableParallelBuilding = true;
+
+  # gcc -DAC_BUILT -Wall vncpcap2john.o memdbg.o -g    -lpcap -fopenmp -o ../run/vncpcap2john
+  # gcc: error: memdbg.o: No such file or directory
+  enableParallelBuilding = false;
 
   NIX_CFLAGS_COMPILE = [ "-DJOHN_SYSTEMWIDE=1" ];
 

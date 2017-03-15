@@ -10,12 +10,12 @@ assert enableJabber -> minmay != null;
 
 let
 
-  version = "2.2.2";
+  version = "2.2.16";
   branch = "2.2";
 
   src = fetchurl {
     url = "mirror://sourceforge/zabbix/zabbix-${version}.tar.gz";
-    sha256 = "1gmjbjmajdllzd7akihb5kg4l2gf0ii9c16fq8mlla37sshzj3p0";
+    sha256 = "0hc0y3p8p6pxri7w3n311ry3m5hb440kgwwkiqlihbhsq73xiz1w";
   };
 
   preConfigure =
@@ -23,7 +23,7 @@ let
       substituteInPlace ./configure \
         --replace " -static" "" \
         ${stdenv.lib.optionalString (stdenv.cc.libc != null) ''
-          --replace /usr/include/iconv.h ${stdenv.cc.libc}/include/iconv.h
+          --replace /usr/include/iconv.h ${stdenv.lib.getDev stdenv.cc.libc}/include/iconv.h
         ''}
     '';
 
@@ -96,7 +96,7 @@ in
       homepage = http://www.zabbix.com/;
       license = licenses.gpl2;
       maintainers = [ maintainers.eelco ];
-      platforms = platforms.linux ++ platforms.darwin;
+      platforms = platforms.linux;
     };
   };
 

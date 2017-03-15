@@ -23,17 +23,17 @@
 let
   # NOTE: When updating, please also update in current stable,
   # as older versions stop working
-  version = "6.4.14";
+  version = "21.4.25";
   sha256 =
     {
-      "x86_64-linux" = "0wpdib3jf5bq4k8q5xv9g01fdcfjb4l903xjxn32rjw615s1q8bg";
-      "i686-linux" = "1lgc7ryp2mn230cfsbndn9ss71l378kib0lvs89rkn25d5zfgzn4";
+      "x86_64-linux" = "1pgab1ah6rl30rm4dj0biq5714pfzd5jjd2bp0nmhdqn1hm5vmhv";
+      "i686-linux"   = "05kn8qman8ghknb0chrlmcxrxg7w6l79frkaqj6blgnhanh13h4n";
     }."${stdenv.system}" or (throw "system ${stdenv.system} not supported");
 
   arch =
     {
       "x86_64-linux" = "x86_64";
-      "i686-linux" = "x86";
+      "i686-linux"   = "x86";
     }."${stdenv.system}" or (throw "system ${stdenv.system} not supported");
 
   # relative location where the dropbox libraries are stored
@@ -74,7 +74,7 @@ in stdenv.mkDerivation {
 
   installPhase = ''
     mkdir -p "$out/${appdir}"
-    cp -r "dropbox-lnx.${arch}-${version}"/* "$out/${appdir}/"
+    cp -r --no-preserve=mode "dropbox-lnx.${arch}-${version}"/* "$out/${appdir}/"
 
     rm "$out/${appdir}/libdrm.so.2"
     rm "$out/${appdir}/libffi.so.6"
@@ -104,6 +104,8 @@ in stdenv.mkDerivation {
     RPATH="${ldpath}:$out/${appdir}"
     makeWrapper "$out/${appdir}/dropbox" "$out/bin/dropbox" \
       --prefix LD_LIBRARY_PATH : "$RPATH"
+
+    chmod 755 $out/${appdir}/dropbox
   '';
 
   fixupPhase = ''
@@ -144,6 +146,8 @@ in stdenv.mkDerivation {
             fi
         fi
     done
+
+    paxmark m $out/${appdir}/dropbox
   '';
 
   meta = {

@@ -1,5 +1,6 @@
 { stdenv, lib, fetchurl, intltool, pkgconfig, pythonPackages, bluez, polkit, gtk3
 , obex_data_server, xdg_utils, libnotify, dconf, gsettings_desktop_schemas, dnsmasq, dhcp
+, hicolor_icon_theme, librsvg
 , withPulseAudio ? true, libpulseaudio }:
 
 let
@@ -16,15 +17,16 @@ in stdenv.mkDerivation rec {
 
   nativeBuildInputs = [ intltool pkgconfig pythonPackages.wrapPython pythonPackages.cython ];
 
-  buildInputs = [ bluez gtk3 pythonPackages.python libnotify dconf gsettings_desktop_schemas ]
+  buildInputs = [ bluez gtk3 pythonPackages.python libnotify dconf librsvg
+                  gsettings_desktop_schemas hicolor_icon_theme ]
                 ++ pythonPath
                 ++ lib.optional withPulseAudio libpulseaudio;
 
   postPatch = lib.optionalString withPulseAudio ''
-    sed -i 's,CDLL(",CDLL("${libpulseaudio}/lib/,g' blueman/main/PulseAudioUtils.py
+    sed -i 's,CDLL(",CDLL("${libpulseaudio.out}/lib/,g' blueman/main/PulseAudioUtils.py
   '';
 
-  pythonPath = with pythonPackages; [ dbus pygobject3 ];
+  pythonPath = with pythonPackages; [ dbus-python pygobject3 pycairo ];
 
   propagatedUserEnvPkgs = [ obex_data_server dconf ];
 
@@ -40,7 +42,7 @@ in stdenv.mkDerivation rec {
   '';
 
   meta = with lib; {
-    homepage = https://github.com/blueman-project;
+    homepage = "https://github.com/blueman-project/blueman";
     description = "GTK+-based Bluetooth Manager";
     license = licenses.gpl3;
     platforms = platforms.linux;

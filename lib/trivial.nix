@@ -53,6 +53,31 @@ rec {
   # argument, but it's nice this way if several uses of `extends` are cascaded.
   extends = f: rattrs: self: let super = rattrs self; in super // f self super;
 
+  # Create an overridable, recursive attribute set. For example:
+  #
+  #     nix-repl> obj = makeExtensible (self: { })
+  #
+  #     nix-repl> obj
+  #     { __unfix__ = «lambda»; extend = «lambda»; }
+  #
+  #     nix-repl> obj = obj.extend (self: super: { foo = "foo"; })
+  #
+  #     nix-repl> obj
+  #     { __unfix__ = «lambda»; extend = «lambda»; foo = "foo"; }
+  #
+  #     nix-repl> obj = obj.extend (self: super: { foo = super.foo + " + "; bar = "bar"; foobar = self.foo + self.bar; })
+  #
+  #     nix-repl> obj
+  #     { __unfix__ = «lambda»; bar = "bar"; extend = «lambda»; foo = "foo + "; foobar = "foo + bar"; }
+  makeExtensible = makeExtensibleWithCustomName "extend";
+
+  # Same as `makeExtensible` but the name of the extending attribute is
+  # customized.
+  makeExtensibleWithCustomName = extenderName: rattrs:
+    fix' rattrs // {
+      ${extenderName} = f: makeExtensibleWithCustomName extenderName (extends f rattrs);
+   };
+
   # Flip the order of the arguments of a binary function.
   flip = f: a: b: f b a;
 
@@ -71,31 +96,28 @@ rec {
     + (if pathExists suffixFile then fileContents suffixFile else "pre-git");
 
   # Whether we're being called by nix-shell.
-  inNixShell = builtins.getEnv "IN_NIX_SHELL" == "1";
+  inNixShell = builtins.getEnv "IN_NIX_SHELL" != "";
 
   # Return minimum/maximum of two numbers.
   min = x: y: if x < y then x else y;
   max = x: y: if x > y then x else y;
 
-  /* Reads a JSON file. It is useful to import pure data into other nix
-     expressions.
-
-     Example:
-
-       mkDerivation {
-         src = fetchgit (importJSON ./repo.json)
-         #...
-       }
-
-       where repo.json contains:
-
-       {
-         "url": "git://some-domain/some/repo",
-         "rev": "265de7283488964f44f0257a8b4a055ad8af984d",
-         "sha256": "0sb3h3067pzf3a7mlxn1hikpcjrsvycjcnj9hl9b1c3ykcgvps7h"
-       }
-
-  */
+  /* Reads a JSON file. */
   importJSON = path:
     builtins.fromJSON (builtins.readFile path);
+
+  /* See https://github.com/NixOS/nix/issues/749. Eventually we'd like these
+     to expand to Nix builtins that carry metadata so that Nix can filter out
+     the INFO messages without parsing the message string.
+
+     Usage:
+     {
+       foo = lib.warn "foo is deprecated" oldFoo;
+     }
+
+     TODO: figure out a clever way to integrate location information from
+     something like __unsafeGetAttrPos.
+  */
+  warn = msg: builtins.trace "WARNING: ${msg}";
+  info = msg: builtins.trace "INFO: ${msg}";
 }

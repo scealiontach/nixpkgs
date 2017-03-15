@@ -2,30 +2,30 @@
 
 stdenv.mkDerivation rec {
   name = "yosys-${version}";
-  version = "2016.05.21";
+  version = "2016.11.25";
 
   srcs = [
     (fetchFromGitHub {
       owner = "cliffordwolf";
       repo = "yosys";
-      rev = "8e9e793126a2772eed4b041bc60415943c71d5ee";
-      sha256 = "1s0x7n7qh2qbfc0d7p4q10fvkr61jdqgyqzijr422rabh9zl4val";
+      rev = "5c2c78e2dd12a860f830dafd73fbed8edf1a3823";
+      sha256 = "1cvfkg0hllp7k2g52mxczd8d0ad7inlpkg27rrbyani2kg0066bk";
       name = "yosys";
     })
     (fetchFromBitbucket {
       owner = "alanmi";
       repo = "abc";
-      rev = "d9559ab";
-      sha256 = "08far669khb65kfpqvjqmqln473j949ak07xibfdjdmiikcy533i";
-      name = "abc";
+      rev = "238674cd44f2";
+      sha256 = "18xk7lqai05am11zymixilgam4jvz5f2jwy9cgillz035man2yzw";
+      name = "yosys-abc";
     })
   ];
   sourceRoot = "yosys";
 
   buildInputs = [ pkgconfig tcl readline libffi python3 bison flex ];
   preBuild = ''
-    chmod -R u+w ../abc
-    ln -s ../abc abc
+    chmod -R u+w ../yosys-abc
+    ln -s ../yosys-abc abc
     make config-gcc
     echo 'ABCREV := default' >> Makefile.conf
     makeFlags="PREFIX=$out $makeFlags"

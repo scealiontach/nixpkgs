@@ -166,7 +166,7 @@ in
 
       buildMachinesFiles = mkOption {
         type = types.listOf types.path;
-        default = [];
+        default = [ "/etc/nix/machines" ];
         example = [ "/etc/nix/machines" "/var/lib/hydra/provisioner/machines" ];
         description = "List of files containing build machines.";
       };
@@ -193,7 +193,9 @@ in
 
   config = mkIf cfg.enable {
 
-    users.extraGroups.hydra = { };
+    users.extraGroups.hydra = {
+      gid = config.ids.gids.hydra;
+    };
 
     users.extraUsers.hydra =
       { description = "Hydra";
@@ -201,6 +203,7 @@ in
         createHome = true;
         home = baseDir;
         useDefaultShell = true;
+        uid = config.ids.uids.hydra;
       };
 
     users.extraUsers.hydra-queue-runner =
@@ -208,12 +211,14 @@ in
         group = "hydra";
         useDefaultShell = true;
         home = "${baseDir}/queue-runner"; # really only to keep SSH happy
+        uid = config.ids.uids.hydra-queue-runner;
       };
 
     users.extraUsers.hydra-www =
       { description = "Hydra web server";
         group = "hydra";
         useDefaultShell = true;
+        uid = config.ids.uids.hydra-www;
       };
 
     nix.trustedUsers = [ "hydra-queue-runner" ];
@@ -338,7 +343,7 @@ in
       { wantedBy = [ "multi-user.target" ];
         requires = [ "hydra-init.service" ];
         after = [ "hydra-init.service" "network.target" ];
-        path = [ pkgs.nettools ];
+        path = [ cfg.package pkgs.nettools ];
         environment = env;
         serviceConfig =
           { ExecStart = "@${cfg.package}/bin/hydra-evaluator hydra-evaluator";

@@ -4,10 +4,6 @@
 with lib;
 
 let
-
-  version = "4.3.1";
-  fullversion = "${version}";
-
   # Our bare-bones wp-config.php file using the above settings
   wordpressConfig = pkgs.writeText "wp-config.php" ''
     <?php
@@ -70,12 +66,7 @@ let
   # The wordpress package itself
   wordpressRoot = pkgs.stdenv.mkDerivation rec {
     name = "wordpress";
-    src = pkgs.fetchFromGitHub {
-      owner = "WordPress";
-      repo = "WordPress";
-      rev = "${fullversion}";
-      sha256 = "1rk10vcv4z9p04hfzc0wkbilrgx7m9ssyr6c3w6vw3vl1bcgqxza";
-    };
+    src = config.package;
     installPhase = ''
       mkdir -p $out
       # copy all the wordpress files we downloaded
@@ -98,7 +89,7 @@ let
       # symlink additional plugin(s)
       ${concatMapStrings (plugin: "ln -s ${plugin} $out/wp-content/plugins/${plugin.name}\n") (config.plugins) }
 
-      # symlink additional translation(s) 
+      # symlink additional translation(s)
       mkdir -p $out/wp-content/languages
       ${concatMapStrings (language: "ln -s ${language}/*.mo ${language}/*.po $out/wp-content/languages/\n") (selectedLanguages) }
     '';
@@ -121,9 +112,17 @@ in
   enablePHP = true;
 
   options = {
+    package = mkOption {
+      type = types.path;
+      default = pkgs.wordpress;
+      description = ''
+        Path to the wordpress sources.
+        Upgrading? We have a test! nix-build ./nixos/tests/wordpress.nix
+      '';
+    };
     dbHost = mkOption {
       default = "localhost";
-      description = "The location of the database server.";  
+      description = "The location of the database server.";
       example = "localhost";
     };
     dbName = mkOption {
@@ -211,6 +210,7 @@ in
           example = "[ \"en_GB\" \"de_DE\" ];";
     };
     extraConfig = mkOption {
+      type = types.lines;
       default = "";
       example =
         ''
@@ -244,7 +244,6 @@ in
     chown ${serverInfo.serverConfig.user} ${config.wordpressUploads}
 
     # we should use systemd dependencies here
-    #waitForUnit("network-interfaces.target");
     if [ ! -d ${serverInfo.fullConfig.services.mysql.dataDir}/${config.dbName} ]; then
       echo "Need to create the database '${config.dbName}' and grant permissions to user named '${config.dbUser}'."
       # Wait until MySQL is up
@@ -253,7 +252,7 @@ in
       done
       ${pkgs.mysql}/bin/mysql -e 'CREATE DATABASE ${config.dbName};'
       ${pkgs.mysql}/bin/mysql -e 'GRANT ALL ON ${config.dbName}.* TO ${config.dbUser}@localhost IDENTIFIED BY "${config.dbPassword}";'
-    else 
+    else
       echo "Good, no need to do anything database related."
     fi
   '';

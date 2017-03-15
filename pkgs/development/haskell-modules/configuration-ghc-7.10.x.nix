@@ -37,22 +37,14 @@ self: super: {
   xhtml = null;
 
   # Enable latest version of cabal-install.
-  cabal-install = (doDistribute (dontJailbreak (dontCheck (super.cabal-install)))).overrideScope (self: super: { Cabal = self.Cabal_1_24_0_0; });
-
-  # Jailbreaking is required for the test suite only (which we don't run).
-  Cabal_1_24_0_0 = dontJailbreak (dontCheck super.Cabal_1_24_0_0);
+  cabal-install = (dontCheck (super.cabal-install)).overrideScope (self: super: { Cabal = self.Cabal_1_24_2_0; });
 
   # Build jailbreak-cabal with the latest version of Cabal.
-  jailbreak-cabal = super.jailbreak-cabal.override { Cabal = self.Cabal_1_24_0_0; };
+  jailbreak-cabal = super.jailbreak-cabal.override { Cabal = self.Cabal_1_24_2_0; };
 
-  idris = overrideCabal super.idris (drv: {
-    # "idris" binary cannot find Idris library otherwise while building.
-    # After installing it's completely fine though. Seems like Nix-specific
-    # issue so not reported.
-    preBuild = "export LD_LIBRARY_PATH=$PWD/dist/build:$LD_LIBRARY_PATH";
-    # https://github.com/idris-lang/Idris-dev/issues/2499
-    librarySystemDepends = (drv.librarySystemDepends or []) ++ [pkgs.gmp];
-  });
+  gtk2hs-buildtools = super.gtk2hs-buildtools.override { Cabal = self.Cabal_1_24_2_0; };
+
+  megaparsec = addBuildDepend super.megaparsec self.fail;
 
   Extra = appendPatch super.Extra (pkgs.fetchpatch {
     url = "https://github.com/seereason/sr-extra/commit/29787ad4c20c962924b823d02a7335da98143603.patch";
@@ -130,9 +122,7 @@ self: super: {
     prePatch = "sed -i 's|4\.8|4.9|' diagrams-core.cabal";
   });
 
-  timezone-series = doJailbreak super.timezone-series;
   timezone-olson = doJailbreak super.timezone-olson;
-  libmpd = dontCheck super.libmpd;
   xmonad-extras = overrideCabal super.xmonad-extras (drv: {
     postPatch = ''
       sed -i -e "s,<\*,<¤,g" XMonad/Actions/Volume.hs
@@ -157,7 +147,7 @@ self: super: {
   tasty-rerun = dontHaddock (appendConfigureFlag super.tasty-rerun "--ghc-option=-XFlexibleContexts");
 
   # http://hub.darcs.net/ivanm/graphviz/issue/5
-  graphviz = dontCheck (dontJailbreak (appendPatch super.graphviz ./patches/graphviz-fix-ghc710.patch));
+  graphviz = dontCheck (appendPatch super.graphviz ./patches/graphviz-fix-ghc710.patch);
 
   # https://github.com/HugoDaniel/RFC3339/issues/14
   timerep = dontCheck super.timerep;
@@ -177,10 +167,10 @@ self: super: {
 
   # haddock-api >= 2.17 is GHC 8.0 only
   haddock-api = self.haddock-api_2_16_1;
+  haddock-library = self.haddock-library_1_2_1;
 
   # lens-family-th >= 0.5.0.0 is GHC 8.0 only
   lens-family-th = self.lens-family-th_0_4_1_0;
-
 
   # The tests in vty-ui do not build, but vty-ui itself builds.
   vty-ui = enableCabalFlag super.vty-ui "no-tests";
@@ -189,9 +179,6 @@ self: super: {
   vector-algorithms = addBuildDepends (dontCheck super.vector-algorithms)
     [ self.mtl self.mwc-random ];
 
-  # Trigger rebuild to mitigate broken packaes on Hydra.
-  amazonka-core = triggerRebuild super.amazonka-core 1;
-
   # https://github.com/thoughtpolice/hs-ed25519/issues/13
   ed25519 = dontCheck super.ed25519;
 
@@ -199,24 +186,33 @@ self: super: {
   # https://github.com/well-typed/hackage-security/issues/158
   hackage-security = dontHaddock (dontCheck super.hackage-security);
 
+  # Breaks a dependency cycle between QuickCheck and semigroups
+  hashable = dontCheck super.hashable;
+  unordered-containers = dontCheck super.unordered-containers;
+
   # GHC versions prior to 8.x require additional build inputs.
-  aeson = disableCabalFlag (addBuildDepend super.aeson self.semigroups) "old-locale";
-  case-insensitive = addBuildDepend super.case-insensitive self.semigroups;
-  bytes = addBuildDepend super.bytes self.doctest;
-  hslogger = addBuildDepend super.hslogger self.HUnit;
-  semigroups_0_18_1 = addBuildDepends super.semigroups (with self; [hashable tagged text unordered-containers]);
-  semigroups = addBuildDepends super.semigroups (with self; [hashable tagged text unordered-containers]);
-  intervals = addBuildDepends super.intervals (with self; [doctest QuickCheck]);
-  Glob_0_7_9 = addBuildDepends super.Glob_0_7_9 (with self; [semigroups]);
+  dependent-map = addBuildDepend super.dependent-map self.semigroups;
+  distributive = addBuildDepend super.distributive self.semigroups;
+  mono-traversable = addBuildDepend super.mono-traversable self.semigroups;
+  attoparsec = addBuildDepends super.attoparsec (with self; [semigroups fail]);
   Glob = addBuildDepends super.Glob (with self; [semigroups]);
+  aeson = disableCabalFlag (addBuildDepend super.aeson self.semigroups) "old-locale";
+  bytes = addBuildDepend super.bytes self.doctest;
+  case-insensitive = addBuildDepend super.case-insensitive self.semigroups;
+  hoauth2 = overrideCabal super.hoauth2 (drv: { testDepends = (drv.testDepends or []) ++ [ self.wai self.warp ]; });
+  hslogger = addBuildDepend super.hslogger self.HUnit;
+  intervals = addBuildDepends super.intervals (with self; [doctest QuickCheck]);
+  lens = addBuildDepend super.lens self.generic-deriving;
+  optparse-applicative = addBuildDepend super.optparse-applicative self.semigroups;
+  QuickCheck = addBuildDepend super.QuickCheck self.semigroups;
+  semigroups = addBuildDepends super.semigroups (with self; [hashable tagged text unordered-containers]);
+  texmath = addBuildDepend super.texmath self.network-uri;
+  yesod-auth-oauth2 = overrideCabal super.yesod-auth-oauth2 (drv: { testDepends = (drv.testDepends or []) ++ [ self.load-env self.yesod ]; });
   # cereal must have `fail` in pre-ghc-8.0.x versions
   # also tests require bytestring>=0.10.8.1
   cereal = dontCheck (addBuildDepend super.cereal self.fail);
-  cereal_0_5_2_0 = dontCheck (addBuildDepend super.cereal_0_5_2_0 self.fail);
 
   # Moved out from common as no longer the case for GHC8
   ghc-mod = super.ghc-mod.override { cabal-helper = self.cabal-helper_0_6_3_1; };
-
-  generic-deriving = self.generic-deriving_1_10_5;
 
 }

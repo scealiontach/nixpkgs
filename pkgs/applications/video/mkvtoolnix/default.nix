@@ -1,6 +1,6 @@
-{ stdenv, fetchFromGitHub, pkgconfig, autoconf, automake
-, ruby, file, xdg_utils, gettext, expat, qt5, boost
-, libebml, zlib, libmatroska, libogg, libvorbis, flac
+{ stdenv, fetchFromGitHub, pkgconfig, autoconf, automake, libiconv
+, drake, ruby, docbook_xsl, file, xdg_utils, gettext, expat, qt5, boost
+, libebml, zlib, libmatroska, libogg, libvorbis, flac, libxslt
 , withGUI ? true
 }:
 
@@ -10,27 +10,27 @@ with stdenv.lib;
 
 stdenv.mkDerivation rec {
   name = "mkvtoolnix-${version}";
-  version = "9.3.1";
+  version = "9.9.0";
 
   src = fetchFromGitHub {
     owner = "mbunkus";
     repo = "mkvtoolnix";
     rev = "release-${version}";
-    sha256 = "1vipznja07nr7gmzdbv93dv2ggmw4x1bh6xxnn13k3fk6ysqh163";
+    sha256 = "1jiz23s52l3gpl84yx4yw3w445jqzcimvnvibvrv3a21k29hyik1";
   };
 
-  nativeBuildInputs = [ pkgconfig autoconf automake gettext ruby ];
+  nativeBuildInputs = [ pkgconfig autoconf automake gettext drake ruby docbook_xsl libxslt ];
 
   buildInputs = [
-    expat
-    file xdg_utils boost libebml zlib
-    libmatroska libogg libvorbis flac
-    (optional withGUI qt5.qtbase)
-  ];
+    expat file xdg_utils boost libebml zlib libmatroska libogg
+    libvorbis flac
+  ]
+  ++ optional stdenv.isDarwin libiconv
+  ++ optional withGUI qt5.qtbase;
 
   preConfigure = "./autogen.sh; patchShebangs .";
-  buildPhase   = "./drake -j $NIX_BUILD_CORES";
-  installPhase = "./drake install -j $NIX_BUILD_CORES";
+  buildPhase   = "drake -j $NIX_BUILD_CORES";
+  installPhase = "drake install -j $NIX_BUILD_CORES";
 
   configureFlags = [
     "--enable-magic"
@@ -40,8 +40,8 @@ stdenv.mkDerivation rec {
     "--disable-profiling"
     "--disable-precompiled-headers"
     "--disable-static-qt"
-    "--without-curl"
     "--with-gettext"
+    "--with-docbook-xsl-root=${docbook_xsl}/share/xml/docbook-xsl"
     (enableFeature withGUI "qt")
   ];
 
@@ -50,6 +50,7 @@ stdenv.mkDerivation rec {
     homepage    = http://www.bunkus.org/videotools/mkvtoolnix/;
     license     = licenses.gpl2;
     maintainers = with maintainers; [ codyopel fuuzetsu rnhmjoj ];
-    platforms   = platforms.linux;
+    platforms   = platforms.linux
+      ++ optionals (!withGUI) platforms.darwin;
   };
 }

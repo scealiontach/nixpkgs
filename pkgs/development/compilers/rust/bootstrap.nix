@@ -1,6 +1,8 @@
 { stdenv, fetchurl, makeWrapper, cacert, zlib }:
 
 let
+  inherit (stdenv.lib) optionalString;
+
   platform =
     if stdenv.system == "i686-linux"
     then "i686-unknown-linux-gnu"
@@ -10,26 +12,28 @@ let
     then "i686-apple-darwin"
     else if stdenv.system == "x86_64-darwin"
     then "x86_64-apple-darwin"
-    else abort "missing boostrap url for platform ${stdenv.system}";
+    else throw "missing bootstrap url for platform ${stdenv.system}";
 
-  # fetch hashes by running `print-hashes.sh 1.9.0`
+  # fetch hashes by running `print-hashes.sh 1.14.0`
   bootstrapHash =
     if stdenv.system == "i686-linux"
-    then "dd4d9bf1b9393867eb18d00431e8fb733894984f2c7b5154bc1b64d045077b45"
+    then "8d5c75728b44468216f99651dfae9d60ae0696a77105dd2b02942d75f3256840"
     else if stdenv.system == "x86_64-linux"
-    then "288ff13efa2577e81c77fc2cb6e2b49b1ed0ceab51b4fa12f7efb87039ac49b7"
+    then "c71325cfea1b6f0bdc5189fa4c50ff96f828096ff3f7b5056367f9685d6a4d04"
     else if stdenv.system == "i686-darwin"
-    then "4d4d4b256d6bd6ae2527cf61007b2553de200f0a1910b7ad41e4f51d2b21e536"
+    then "fe1b3d67329a22d67e3b8db8858a43022e2e746dde60ef4a2db3f2cac16ea9bd"
     else if stdenv.system == "x86_64-darwin"
-    then "d59b5509e69c1cace20a57072e3b3ecefdbfd8c7e95657b0ff2ac10aa1dfebe6"
-    else throw "missing boostrap hash for platform ${stdenv.system}";
+    then "3381341524b0184da5ed2cdcddc2a25e2e335e87f1cf676f64d98ee5e6479f20"
+    else throw "missing bootstrap hash for platform ${stdenv.system}";
+
+  needsPatchelf = stdenv.isLinux;
 
   src = fetchurl {
      url = "https://static.rust-lang.org/dist/rust-${version}-${platform}.tar.gz";
      sha256 = bootstrapHash;
   };
 
-  version = "1.9.0";
+  version = "1.14.0";
 in
 
 rec {
@@ -46,9 +50,11 @@ rec {
       ./install.sh --prefix=$out \
         --components=rustc,rust-std-${platform},rust-docs
 
-      patchelf \
-        --set-interpreter $(cat $NIX_CC/nix-support/dynamic-linker) \
-        "$out/bin/rustc"
+      ${optionalString needsPatchelf ''
+        patchelf \
+          --set-interpreter $(cat $NIX_CC/nix-support/dynamic-linker) \
+          "$out/bin/rustc"
+      ''}
 
       # Do NOT, I repeat, DO NOT use `wrapProgram` on $out/bin/rustc
       # (or similar) here. It causes strange effects where rustc loads
@@ -71,9 +77,11 @@ rec {
       ./install.sh --prefix=$out \
         --components=cargo
 
-      patchelf \
-        --set-interpreter $(cat $NIX_CC/nix-support/dynamic-linker) \
-        "$out/bin/cargo"
+      ${optionalString needsPatchelf ''
+        patchelf \
+          --set-interpreter $(cat $NIX_CC/nix-support/dynamic-linker) \
+          "$out/bin/cargo"
+      ''}
 
       wrapProgram "$out/bin/cargo" \
         --suffix PATH : "${rustc}/bin"

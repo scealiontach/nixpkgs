@@ -17,7 +17,7 @@ buildGoPackage rec {
     sha256 = "06aqx3jy744yx29xyg8ips0dw16186hfqbxdv3hfrmwxmaxhl4lz";
   };
 
-  goDeps = ./deps.json;
+  goDeps = ./deps.nix;
 
   nativeBuildInputs = [ sudo ];
   buildFlags = [ "-tags textsecure" ];
@@ -30,7 +30,7 @@ buildGoPackage rec {
       -e 's|/bin/chown|${coreutils}/bin/chown|' \
       -e 's|/bin/date|${coreutils}/bin/date|' \
       -e 's|/sbin/poweroff|${systemd}/sbin/poweroff|' \
-      -e 's|/usr/bin/sudo|/var/setuid-wrappers/sudo|' \
+      -e 's|/usr/bin/sudo|/run/wrappers/bin/sudo|' \
       -e 's|/sbin/cryptsetup|${cryptsetup}/bin/cryptsetup|'
   '';
 }

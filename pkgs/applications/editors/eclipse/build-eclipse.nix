@@ -1,4 +1,6 @@
-{ stdenv, makeDesktopItem, freetype, fontconfig, libX11, libXrender, zlib, jdk, glib, gtk, libXtst, webkitgtk2, makeWrapper, ... }:
+{ stdenv, makeDesktopItem, freetype, fontconfig, libX11, libXrender
+, zlib, jdk, glib, gtk2, libXtst, gsettings_desktop_schemas, webkitgtk2
+, makeWrapper, ... }:
 
 { name, src ? builtins.getAttr stdenv.system sources, sources ? null, description }:
 
@@ -15,7 +17,10 @@ stdenv.mkDerivation rec {
     categories = "Application;Development;";
   };
 
-  buildInputs = [ makeWrapper ];
+  buildInputs = [
+    fontconfig freetype glib gsettings_desktop_schemas gtk2 jdk libX11
+    libXrender libXtst makeWrapper zlib
+  ] ++ stdenv.lib.optional (webkitgtk2 != null) webkitgtk2;
 
   buildCommand = ''
     # Unpack tarball.
@@ -26,7 +31,7 @@ stdenv.mkDerivation rec {
     interpreter=$(echo ${stdenv.glibc.out}/lib/ld-linux*.so.2)
     libCairo=$out/eclipse/libcairo-swt.so
     patchelf --set-interpreter $interpreter $out/eclipse/eclipse
-    [ -f $libCairo ] && patchelf --set-rpath ${freetype}/lib:${fontconfig}/lib:${libX11}/lib:${libXrender}/lib:${zlib}/lib $libCairo
+    [ -f $libCairo ] && patchelf --set-rpath ${stdenv.lib.makeLibraryPath [ freetype fontconfig libX11 libXrender zlib ]} $libCairo
 
     # Create wrapper script.  Pass -configuration to store
     # settings in ~/.eclipse/org.eclipse.platform_<version> rather
@@ -36,7 +41,8 @@ stdenv.mkDerivation rec {
 
     makeWrapper $out/eclipse/eclipse $out/bin/eclipse \
       --prefix PATH : ${jdk}/bin \
-      --prefix LD_LIBRARY_PATH : ${glib}/lib:${gtk.out}/lib:${libXtst}/lib${stdenv.lib.optionalString (webkitgtk2 != null) ":${webkitgtk2}/lib"} \
+      --prefix LD_LIBRARY_PATH : ${stdenv.lib.makeLibraryPath ([ glib gtk2 libXtst ] ++ stdenv.lib.optional (webkitgtk2 != null) webkitgtk2)} \
+      --prefix XDG_DATA_DIRS : "$GSETTINGS_SCHEMAS_PATH" \
       --add-flags "-configuration \$HOME/.eclipse/''${productId}_$productVersion/configuration"
 
     # Create desktop item.

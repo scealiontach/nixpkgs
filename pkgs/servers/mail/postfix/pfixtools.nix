@@ -26,6 +26,8 @@ stdenv.mkDerivation {
 
   src = pfixtoolsSrc;
 
+  patches = [ ./0001-Fix-build-with-unbound-1.6.1.patch ];
+
   buildInputs = [git gperf pcre unbound libev tokyocabinet pkgconfig bash libsrs2];
 
   postUnpack = ''
@@ -37,6 +39,8 @@ stdenv.mkDerivation {
     substituteInPlace postlicyd/policy_tokens.sh \
                       --replace /bin/bash ${bash}/bin/bash;
   '';
+
+  NIX_CFLAGS_COMPILE = "-Wno-error=unused-result";
 
   makeFlags = "DESTDIR=$(out) prefix=";
 

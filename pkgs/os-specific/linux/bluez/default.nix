@@ -1,14 +1,13 @@
-{ stdenv, fetchurl, pkgconfig, dbus, glib, libusb, alsaLib, python, makeWrapper
-, pythonDBus, pygobject, readline, libsndfile }:
+{ stdenv, fetchurl, pkgconfig, dbus, glib, libusb, alsaLib, pythonPackages, makeWrapper
+, readline, libsndfile }:
 
 assert stdenv.isLinux;
 
 let
-  pythonpath = "${pythonDBus}/lib/${python.libPrefix}/site-packages:"
-    + "${pygobject}/lib/${python.libPrefix}/site-packages";
-in
-   
-stdenv.mkDerivation rec {
+  inherit (pythonPackages) python;
+  pythonpath = "${pythonPackages.dbus-python}/lib/${python.libPrefix}/site-packages:"
+    + "${pythonPackages.pygobject2}/lib/${python.libPrefix}/site-packages";
+in stdenv.mkDerivation rec {
   name = "bluez-4.101";
    
   src = fetchurl {
@@ -21,7 +20,7 @@ stdenv.mkDerivation rec {
       readline libsndfile
       # Disables GStreamer; not clear what it gains us other than a
       # zillion extra dependencies.
-      # gstreamer gst_plugins_base 
+      # gstreamer gst-plugins-base 
     ];
 
   configureFlags = [

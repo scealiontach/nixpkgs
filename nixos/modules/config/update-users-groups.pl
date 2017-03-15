@@ -52,8 +52,8 @@ foreach my $g (@{$spec->{groups}}) {
     $gidsUsed{$g->{gid}} = 1 if defined $g->{gid};
 }
 
-foreach my $u (@{$spec->{groups}}) {
-    $uidsUsed{$u->{u}} = 1 if defined $u->{uid};
+foreach my $u (@{$spec->{users}}) {
+    $uidsUsed{$u->{uid}} = 1 if defined $u->{uid};
 }
 
 # Read the current /etc/group.
@@ -177,7 +177,7 @@ foreach my $u (@{$spec->{users}}) {
     }
 
     # Create a home directory.
-    if ($u->{createHome} && ! -e $u->{home}) {
+    if ($u->{createHome}) {
         make_path($u->{home}, { mode => 0700 }) if ! -e $u->{home};
         chown $u->{uid}, $u->{gid}, $u->{home};
     }

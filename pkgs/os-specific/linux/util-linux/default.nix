@@ -1,29 +1,25 @@
-{ stdenv, fetchurl, pkgconfig, zlib, ncurses ? null, perl ? null, pam, systemd }:
+{ lib, stdenv, fetchurl, pkgconfig, zlib, fetchpatch, shadow
+, ncurses ? null, perl ? null, pam, systemd, minimal ? false }:
 
 stdenv.mkDerivation rec {
   name = "util-linux-${version}";
-  version = "2.28";
+  version = lib.concatStringsSep "." ([ majorVersion ]
+    ++ lib.optional (patchVersion != "") patchVersion);
+  majorVersion = "2.29";
+  patchVersion = "2";
 
   src = fetchurl {
-    url = "mirror://kernel/linux/utils/util-linux/v${version}/${name}.tar.xz";
-    sha256 = "1fql204qn3098j34yd358l85ffp7a4kqjf7jf1qk2b4al7i4fn1r";
+    url = "mirror://kernel/linux/utils/util-linux/v${majorVersion}/${name}.tar.xz";
+    sha256 = "1qz81w8vzrmy8xn9yx7ls4amkbgwx6vr62pl6kv9g7r0g3ba9kmc";
   };
 
-  patches = [
-    ./rtcwake-search-PATH-for-shutdown.patch
-  ];
+  patches = [ ./rtcwake-search-PATH-for-shutdown.patch ];
 
-  outputs = [ "bin" "out" "man" ]; # TODO: $bin is kept the first for now
-  # due to lots of ${utillinux}/bin occurences and headers being rather small
-  outputDev = "bin";
+  outputs = [ "bin" "dev" "out" "man" ];
 
-
-  #FIXME: make it also work on non-nixos?
   postPatch = ''
-    # Substituting store paths would create a circular dependency on systemd
     substituteInPlace include/pathnames.h \
-      --replace "/bin/login" "/run/current-system/sw/bin/login" \
-      --replace "/sbin/shutdown" "/run/current-system/sw/bin/shutdown"
+      --replace "/bin/login" "${shadow}/bin/login"
   '';
 
   crossAttrs = {
@@ -40,7 +36,7 @@ stdenv.mkDerivation rec {
     --enable-last
     --enable-mesg
     --disable-use-tty-group
-    --enable-fs-paths-default=/var/setuid-wrappers:/var/run/current-system/sw/bin:/sbin
+    --enable-fs-paths-default=/run/wrappers/bin:/var/run/current-system/sw/bin:/sbin
     ${if ncurses == null then "--without-ncurses" else ""}
     ${if systemd == null then "" else ''
       --with-systemd
@@ -53,17 +49,19 @@ stdenv.mkDerivation rec {
   nativeBuildInputs = [ pkgconfig ];
   buildInputs =
     [ zlib pam ]
-    ++ stdenv.lib.optional (ncurses != null) ncurses
-    ++ stdenv.lib.optional (systemd != null) [ systemd pkgconfig ]
-    ++ stdenv.lib.optional (perl != null) perl;
+    ++ lib.optional (ncurses != null) ncurses
+    ++ lib.optional (systemd != null) systemd
+    ++ lib.optional (perl != null) perl;
 
   postInstall = ''
     rm "$bin/bin/su" # su should be supplied by the su package (shadow)
+  '' + lib.optionalString minimal ''
+    rm -rf $out/share/{locale,doc,bash-completion}
   '';
 
   enableParallelBuilding = true;
 
-  meta = with stdenv.lib; {
+  meta = with lib; {
     homepage = https://www.kernel.org/pub/linux/utils/util-linux/;
     description = "A set of system utilities for Linux";
     license = licenses.gpl2; # also contains parts under more permissive licenses

@@ -41,7 +41,7 @@ if ($action eq "switch" || $action eq "boot") {
 }
 
 # Just in case the new configuration hangs the system, do a sync now.
-system("@coreutils@/bin/sync") unless ($ENV{"NIXOS_NO_SYNC"} // "") eq "1";
+system("@coreutils@/bin/sync", "-f", "/nix/store") unless ($ENV{"NIXOS_NO_SYNC"} // "") eq "1";
 
 exit 0 if $action eq "boot";
 
@@ -213,33 +213,30 @@ while (my ($unit, $state) = each %{$activePrev}) {
                 elsif (!boolIsTrue($unitInfo->{'X-RestartIfChanged'} // "yes") || boolIsTrue($unitInfo->{'RefuseManualStop'} // "no") ) {
                     $unitsToSkip{$unit} = 1;
                 } else {
-                    # If this unit is socket-activated, then stop the
-                    # socket unit(s) as well, and restart the
-                    # socket(s) instead of the service.
-                    my $socketActivated = 0;
-                    if ($unit =~ /\.service$/) {
-                        my @sockets = split / /, ($unitInfo->{Sockets} // "");
-                        if (scalar @sockets == 0) {
-                            @sockets = ("$baseName.socket");
-                        }
-                        foreach my $socket (@sockets) {
-                            if (defined $activePrev->{$socket}) {
-                                $unitsToStop{$unit} = 1;
-                                $unitsToStart{$unit} = 1;
-                                recordUnit($startListFile, $socket);
-                                $socketActivated = 1;
-                            }
-                        }
-                    }
-
                     if (!boolIsTrue($unitInfo->{'X-StopIfChanged'} // "yes")) {
-
                         # This unit should be restarted instead of
                         # stopped and started.
                         $unitsToRestart{$unit} = 1;
                         recordUnit($restartListFile, $unit);
-
                     } else {
+                        # If this unit is socket-activated, then stop the
+                        # socket unit(s) as well, and restart the
+                        # socket(s) instead of the service.
+                        my $socketActivated = 0;
+                        if ($unit =~ /\.service$/) {
+                            my @sockets = split / /, ($unitInfo->{Sockets} // "");
+                            if (scalar @sockets == 0) {
+                                @sockets = ("$baseName.socket");
+                            }
+                            foreach my $socket (@sockets) {
+                                if (defined $activePrev->{$socket}) {
+                                    $unitsToStop{$socket} = 1;
+                                    $unitsToStart{$socket} = 1;
+                                    recordUnit($startListFile, $socket);
+                                    $socketActivated = 1;
+                                }
+                            }
+                        }
 
                         # If the unit is not socket-activated, record
                         # that this unit needs to be started below.
@@ -251,7 +248,6 @@ while (my ($unit, $state) = each %{$activePrev}) {
                         }
 
                         $unitsToStop{$unit} = 1;
-
                     }
                 }
             }
@@ -386,6 +382,10 @@ system("@systemd@/bin/systemctl", "reset-failed");
 
 # Make systemd reload its units.
 system("@systemd@/bin/systemctl", "daemon-reload") == 0 or $res = 3;
+
+# Set the new tmpfiles
+print STDERR "setting up tmpfiles\n";
+system("@systemd@/bin/systemd-tmpfiles", "--create", "--remove", "--exclude-prefix=/dev") == 0 or $res = 3;
 
 # Reload units that need it. This includes remounting changed mount
 # units.

@@ -3,13 +3,13 @@
 
 stdenv.mkDerivation rec {
   name = "btfs-${version}";
-  version = "2.10";
+  version = "2.13";
 
   src = fetchFromGitHub {
-    owner = "johang";
-    repo = "btfs";
-    rev = "2eac5e70a1ed22fa0761b6357c54fd90eea02de6";
-    sha256 = "146vgwn79dnbkkn35safga55lkwhvarkmilparmr26hjb56cs1dk";
+    owner  = "johang";
+    repo   = "btfs";
+    rev    = "v${version}";
+    sha256 = "1nd021xbxrikd8p0w9816xjwlrs9m1nc6954q23qxfw2jbmszlk2";
   };
 
   buildInputs = [

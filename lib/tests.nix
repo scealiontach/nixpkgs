@@ -80,7 +80,7 @@ runTests {
                      y = x.merge {};
                 in (y.merge) { a = 10; };
 
-          resRem7 = res6.replace (a : removeAttrs a ["a"]);
+          resRem7 = res6.replace (a: removeAttrs a ["a"]);
 
           resReplace6 = let x = defaultOverridableDelayableArgs id { a = 7; mergeAttrBy = { a = add; }; };
                             x2 = x.merge { a = 20; }; # now we have 27
@@ -88,10 +88,10 @@ runTests {
 
           # fixed tests (delayed args): (when using them add some comments, please)
           resFixed1 =
-                let x = defaultOverridableDelayableArgs id ( x : { a = 7; c = x.fixed.b; });
-                    y = x.merge (x : { name = "name-${builtins.toString x.fixed.c}"; });
+                let x = defaultOverridableDelayableArgs id ( x: { a = 7; c = x.fixed.b; });
+                    y = x.merge (x: { name = "name-${builtins.toString x.fixed.c}"; });
                 in (y.merge) { b = 10; };
-          strip = attrs : removeAttrs attrs ["merge" "replace"];
+          strip = attrs: removeAttrs attrs ["merge" "replace"];
       in all id
         [ ((strip res1) == { })
           ((strip res2) == { a = 7; })
@@ -128,6 +128,96 @@ runTests {
   testHasAttrByPathFalse = {
     expr = hasAttrByPath ["a" "b"] { a = { c = "yey"; }; };
     expected = false;
+  };
+
+
+  /* Generator tests */
+  # these tests assume attributes are converted to lists
+  # in alphabetical order
+
+  testMkKeyValueDefault = {
+    expr = generators.mkKeyValueDefault ":" "f:oo" "bar";
+    expected = ''f\:oo:bar'';
+  };
+
+  testToKeyValue = {
+    expr = generators.toKeyValue {} {
+      key = "value";
+      "other=key" = "baz";
+    };
+    expected = ''
+      key=value
+      other\=key=baz
+    '';
+  };
+
+  testToINIEmpty = {
+    expr = generators.toINI {} {};
+    expected = "";
+  };
+
+  testToINIEmptySection = {
+    expr = generators.toINI {} { foo = {}; bar = {}; };
+    expected = ''
+      [bar]
+
+      [foo]
+    '';
+  };
+
+  testToINIDefaultEscapes = {
+    expr = generators.toINI {} {
+      "no [ and ] allowed unescaped" = {
+        "and also no = in keys" = 42;
+      };
+    };
+    expected = ''
+      [no \[ and \] allowed unescaped]
+      and also no \= in keys=42
+    '';
+  };
+
+  testToINIDefaultFull = {
+    expr = generators.toINI {} {
+      "section 1" = {
+        attribute1 = 5;
+        x = "Me-se JarJar Binx";
+      };
+      "foo[]" = {
+        "he\\h=he" = "this is okay";
+      };
+    };
+    expected = ''
+      [foo\[\]]
+      he\h\=he=this is okay
+
+      [section 1]
+      attribute1=5
+      x=Me-se JarJar Binx
+    '';
+  };
+
+  /* right now only invocation check */
+  testToJSONSimple =
+    let val = {
+      foobar = [ "baz" 1 2 3 ];
+    };
+    in {
+      expr = generators.toJSON {} val;
+      # trival implementation
+      expected = builtins.toJSON val;
+  };
+
+  /* right now only invocation check */
+  testToYAMLSimple =
+    let val = {
+      list = [ { one = 1; } { two = 2; } ];
+      all = 42;
+    };
+    in {
+      expr = generators.toYAML {} val;
+      # trival implementation
+      expected = builtins.toJSON val;
   };
 
 }

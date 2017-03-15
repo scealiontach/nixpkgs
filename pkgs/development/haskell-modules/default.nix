@@ -1,4 +1,4 @@
-{ pkgs, stdenv, ghc
+{ pkgs, stdenv, ghc, all-cabal-hashes
 , compilerConfig ? (self: super: {})
 , packageSetConfig ? (self: super: {})
 , overrides ? (self: super: {})
@@ -6,22 +6,19 @@
 
 let
 
-  allCabalFiles = pkgs.fetchFromGitHub {
-     owner = "commercialhaskell";
-     repo = "all-cabal-hashes";
-     rev = "72f1318540eff69544eb8c14a16f630d0c5448b8";
-     sha256 = "1czi1rajk2726mqrw3qp7a43h26acbjw54ll3ns063yzg9hg469m";
-   };
-
-  inherit (stdenv.lib) fix' extends;
+  inherit (stdenv.lib) fix' extends makeOverridable makeExtensible;
+  inherit (import ./lib.nix { inherit pkgs; }) overrideCabal;
 
   haskellPackages = self:
     let
 
-      mkDerivation = pkgs.callPackage ./generic-builder.nix {
+      mkDerivationImpl = pkgs.callPackage ./generic-builder.nix {
         inherit stdenv;
         inherit (pkgs) fetchurl pkgconfig glibcLocales coreutils gnugrep gnused;
-        inherit (self) ghc jailbreak-cabal;
+        jailbreak-cabal = if (self.ghc.cross or null) != null
+          then self.ghc.bootPkgs.jailbreak-cabal
+          else self.jailbreak-cabal;
+        inherit (self) ghc;
         hscolour = overrideCabal self.hscolour (drv: {
           isLibrary = false;
           doHaddock = false;
@@ -41,15 +38,13 @@ let
         });
       };
 
-      overrideCabal = drv: f: drv.override (args: args // {
-        mkDerivation = drv: args.mkDerivation (drv // f drv);
-      });
+      mkDerivation = makeOverridable mkDerivationImpl;
 
       callPackageWithScope = scope: drv: args: (stdenv.lib.callPackageWith scope drv args) // {
         overrideScope = f: callPackageWithScope (mkScope (fix' (extends f scope.__unfix__))) drv args;
       };
 
-      mkScope = scope: pkgs // pkgs.xorg // pkgs.gnome // scope;
+      mkScope = scope: pkgs // pkgs.xorg // pkgs.gnome2 // scope;
       defaultScope = mkScope self;
       callPackage = drv: args: callPackageWithScope defaultScope drv args;
 
@@ -59,18 +54,26 @@ let
         inherit packages;
       };
 
-      hackage2nix = name: version: pkgs.stdenv.mkDerivation {
-        name = "cabal2nix-${name}-${version}";
-        buildInputs = [ pkgs.cabal2nix ];
-        phases = ["installPhase"];
-        LANG = "en_US.UTF-8";
-        LOCALE_ARCHIVE = pkgs.lib.optionalString pkgs.stdenv.isLinux "${pkgs.glibcLocales}/lib/locale/locale-archive";
-        installPhase = ''
-          export HOME="$TMP"
-          mkdir $out
-          hash=$(sed -e 's/.*"SHA256":"//' -e 's/".*$//' ${allCabalFiles}/${name}/${version}/${name}.json)
-          cabal2nix --compiler=${self.ghc.name} --system=${stdenv.system} --sha256=$hash ${allCabalFiles}/${name}/${version}/${name}.cabal >$out/default.nix
-        '';
+      haskellSrc2nix = { name, src, sha256 ? null }:
+        let
+          sha256Arg = if isNull sha256 then "--sha256=" else ''--sha256="${sha256}"'';
+        in pkgs.stdenv.mkDerivation {
+          name = "cabal2nix-${name}";
+          buildInputs = [ pkgs.cabal2nix ];
+          phases = ["installPhase"];
+          LANG = "en_US.UTF-8";
+          LOCALE_ARCHIVE = pkgs.lib.optionalString pkgs.stdenv.isLinux "${pkgs.glibcLocales}/lib/locale/locale-archive";
+          installPhase = ''
+            export HOME="$TMP"
+            mkdir -p "$out"
+            cabal2nix --compiler=${self.ghc.name} --system=${stdenv.system} ${sha256Arg} "${src}" > "$out/default.nix"
+          '';
+      };
+
+      hackage2nix = name: version: haskellSrc2nix {
+        name   = "${name}-${version}";
+        sha256 = ''$(sed -e 's/.*"SHA256":"//' -e 's/".*$//' "${all-cabal-hashes}/${name}/${version}/${name}.json")'';
+        src    = "${all-cabal-hashes}/${name}/${version}/${name}.cabal";
       };
 
     in
@@ -80,12 +83,24 @@ let
 
         callHackage = name: version: self.callPackage (hackage2nix name version);
 
+        # Creates a Haskell package from a source package by calling cabal2nix on the source.
+        callCabal2nix = name: src: args:
+	  let
+	    # Filter out files other than the cabal file. This ensures
+	    # that we don't create new derivations even when the cabal
+	    # file hasn't changed.
+	    justCabal = builtins.filterSource (path: type: pkgs.lib.hasSuffix ".cabal" path) src;
+	    drv = self.callPackage (haskellSrc2nix { inherit name; src = justCabal; }) args;
+	  in overrideCabal drv (drv': { inherit src; }); # Restore the desired src.
+
         ghcWithPackages = selectFrom: withPackages (selectFrom self);
 
         ghcWithHoogle = selectFrom:
           let
             packages = selectFrom self;
-            hoogle = callPackage ./hoogle.nix { inherit packages; };
+            hoogle = callPackage ./hoogle.nix {
+              inherit packages;
+            };
           in withPackages (packages ++ [ hoogle ]);
 
         ghc = ghc // {
@@ -96,11 +111,13 @@ let
       };
 
   commonConfiguration = import ./configuration-common.nix { inherit pkgs; };
+  nixConfiguration = import ./configuration-nix.nix { inherit pkgs; };
 
 in
 
-  fix'
+  makeExtensible
     (extends overrides
       (extends packageSetConfig
         (extends compilerConfig
-          (extends commonConfiguration haskellPackages))))
+          (extends commonConfiguration
+            (extends nixConfiguration haskellPackages)))))

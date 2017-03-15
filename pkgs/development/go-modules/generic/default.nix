@@ -1,4 +1,4 @@
-{ go, govers, parallel, lib, fetchgit, fetchhg }:
+{ go, govers, parallel, lib, fetchgit, fetchhg, rsync }:
 
 { name, buildInputs ? [], nativeBuildInputs ? [], passthru ? {}, preFixup ? ""
 
@@ -16,6 +16,10 @@
 
 # Extra sources to include in the gopath
 , extraSrcs ? [ ]
+
+# Extra gopaths containing src subfolder
+# with sources to include in the gopath
+, extraSrcPaths ? [ ]
 
 # go2nix dependency file
 , goDeps ? null
@@ -55,13 +59,8 @@ let
       else abort "Unrecognized package fetch type";
     };
 
-  importGodeps = { depsFile, filterPackages ? [] }:
-  let
-    deps = lib.importJSON depsFile;
-    external = filter (d: d ? include) deps;
-    direct = filter (d: d ? goPackagePath && (length filterPackages == 0 || elem d.goPackagePath filterPackages)) deps;
-  in
-    concatLists (map importGodeps (map (d: { depsFile = ./. + d.include; filterPackages = d.packages; }) external)) ++ (map dep2src direct);
+  importGodeps = { depsFile }:
+    map dep2src (import depsFile);
 
   goPath = if goDeps != null then importGodeps { depsFile = goDeps; } ++ extraSrcs
                              else extraSrcs;
@@ -70,7 +69,7 @@ in
 go.stdenv.mkDerivation (
   (builtins.removeAttrs args [ "goPackageAliases" "disabled" ]) // {
 
-  name = "go${go.meta.branch}-${name}";
+  inherit name;
   nativeBuildInputs = [ go parallel ]
     ++ (lib.optional (!dontRenameImports) govers) ++ nativeBuildInputs;
   buildInputs = [ go ] ++ buildInputs;
@@ -90,6 +89,9 @@ go.stdenv.mkDerivation (
     chmod -R u+w goPath/*
     mv goPath/* "go/src/${goPackagePath}"
     rmdir goPath
+
+  '') + (lib.optionalString (extraSrcPaths != []) ''
+    ${rsync}/bin/rsync -a ${lib.concatMapStrings (p: "${p}/src") extraSrcPaths} go
 
   '') + ''
     export GOPATH=$NIX_BUILD_TOP/go:$GOPATH
@@ -114,6 +116,7 @@ go.stdenv.mkDerivation (
       local d; local cmd;
       cmd="$1"
       d="$2"
+      . $TMPDIR/buildFlagsArray
       echo "$d" | grep -q "\(/_\|examples\|Godeps\)" && return 0
       [ -n "$excludedPackages" ] && echo "$d" | grep -q "$excludedPackages" && return 0
       local OUT
@@ -141,6 +144,11 @@ go.stdenv.mkDerivation (
       fi
     }
 
+    if [ ''${#buildFlagsArray[@]} -ne 0 ]; then
+      declare -p buildFlagsArray > $TMPDIR/buildFlagsArray
+    else
+      touch $TMPDIR/buildFlagsArray
+    fi
     export -f buildGoDir # parallel needs to see the function
     if [ -z "$enableParallelBuilding" ]; then
         export NIX_BUILD_CORES=1
@@ -185,6 +193,16 @@ go.stdenv.mkDerivation (
     done < <(find $bin/bin -type f 2>/dev/null)
   '';
 
+  shellHook = ''
+    d=$(mktemp -d "--suffix=-$name")
+  '' + toString (map (dep: ''
+     mkdir -p "$d/src/$(dirname "${dep.goPackagePath}")"
+     ln -s "${dep.src}" "$d/src/${dep.goPackagePath}"
+  ''
+  ) goPath) + ''
+    export GOPATH="$d:$GOPATH"
+  '';
+
   disallowedReferences = lib.optional (!allowGoReference) go
     ++ lib.optional (!dontRenameImports) govers;
 
@@ -195,11 +213,11 @@ go.stdenv.mkDerivation (
   enableParallelBuilding = enableParallelBuilding;
 
   # I prefer to call this dev but propagatedBuildInputs expects $out to exist
-  outputs = args.outputs or [ "out" "bin" ];
+  outputs = args.outputs or [ "bin" "out" ];
 
   meta = {
     # Add default meta information
-    platforms = lib.platforms.all;
+    platforms = go.meta.platforms or lib.platforms.all;
   } // meta // {
     # add an extra maintainer to every package
     maintainers = (meta.maintainers or []) ++

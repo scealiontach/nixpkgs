@@ -4,7 +4,14 @@
 let
   version = virtualbox.version;
   xserverVListFunc = builtins.elemAt (stdenv.lib.splitString "." xorg.xorgserver.version);
-  xserverABI = xserverVListFunc 0 + xserverVListFunc 1;
+
+  # Forced to 1.18 in <nixpkgs/nixos/modules/services/x11/xserver.nix>
+  # as it even fails to build otherwise.  Still, override this even here,
+  # in case someone does just a standalone build
+  # (not via videoDrivers = ["vboxvideo"]).
+  # It's likely to work again in some future update.
+  xserverABI = let abi = xserverVListFunc 0 + xserverVListFunc 1;
+    in if abi == "119" then "118" else abi;
 in
 
 stdenv.mkDerivation {
@@ -12,17 +19,20 @@ stdenv.mkDerivation {
 
   src = fetchurl {
     url = "http://download.virtualbox.org/virtualbox/${version}/VBoxGuestAdditions_${version}.iso";
-    sha256 = "1rh1dw0fqz1zhdbpnwxclh1bfj889xh27dm2m23v5wg54bymkfvg";
+    sha256 = "1b206b76050dccd3ed979307230f9ddea79551e1c0aba93faee77416733cdc8a";
   };
 
   KERN_DIR = "${kernel.dev}/lib/modules/*/build";
+
+  hardeningDisable = [ "pic" ];
+
+  NIX_CFLAGS_COMPILE = "-Wno-error=incompatible-pointer-types";
 
   buildInputs = [ patchelf cdrkit makeWrapper dbus ];
 
   installPhase = ''
     mkdir -p $out
     cp -r install/* $out
-
   '';
 
   buildCommand = with xorg; ''
@@ -75,7 +85,7 @@ stdenv.mkDerivation {
 
     for i in lib/VBoxOGL*.so
     do
-        patchelf --set-rpath $out/lib:${dbus.lib}/lib:${libXcomposite.out}/lib:${libXdamage.out}/lib:${libXext.out}/lib:${libXfixes.out}/lib $i
+        patchelf --set-rpath ${lib.makeLibraryPath [ "$out" dbus libXcomposite libXdamage libXext libXfixes ]} $i
     done
 
     # FIXME: Virtualbox 4.3.22 moved VBoxClient-all (required by Guest Additions

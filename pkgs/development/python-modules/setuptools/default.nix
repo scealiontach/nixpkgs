@@ -1,14 +1,15 @@
 { stdenv, lib, fetchurl, python, wrapPython }:
 
 stdenv.mkDerivation rec {
-  shortName = "setuptools-${version}";
-  name = "${python.executable}-${shortName}";
+  pname = "setuptools";
+  shortName = "${pname}-${version}";
+  name = "${python.libPrefix}-${shortName}";
 
-  version = "19.4";  # 18.4 and up breaks python34Packages.characteristic and many others
+  version = "30.2.0";
 
   src = fetchurl {
-    url = "mirror://pypi/s/setuptools/${shortName}.tar.gz";
-    sha256 = "214bf29933f47cf25e6faa569f710731728a07a19cae91ea64f826051f68a8cf";
+    url = "mirror://pypi/${builtins.substring 0 1 pname}/${pname}/${shortName}.tar.gz";
+    sha256 = "f865709919903e3399343c0b3c42f95e9aeddc41e38cfb334fb2bb5dfa384857";
   };
 
   buildInputs = [ python wrapPython ];

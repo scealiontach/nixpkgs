@@ -5,11 +5,19 @@ with lib;
 let
   cfg = config.services.nginx;
   virtualHosts = mapAttrs (vhostName: vhostConfig:
-    vhostConfig // (optionalAttrs vhostConfig.enableACME {
-      sslCertificate = "/var/lib/acme/${vhostName}/fullchain.pem";
-      sslCertificateKey = "/var/lib/acme/${vhostName}/key.pem";
+    let
+      serverName = if vhostConfig.serverName != null
+        then vhostConfig.serverName
+        else vhostName;
+    in
+    vhostConfig // {
+      inherit serverName;
+    } // (optionalAttrs vhostConfig.enableACME {
+      sslCertificate = "/var/lib/acme/${serverName}/fullchain.pem";
+      sslCertificateKey = "/var/lib/acme/${serverName}/key.pem";
     })
   ) cfg.virtualHosts;
+  enableIPv6 = config.networking.enableIPv6;
 
   configFile = pkgs.writeText "nginx.conf" ''
     user ${cfg.user} ${cfg.group};
@@ -18,7 +26,13 @@ let
 
     ${cfg.config}
 
-    ${optionalString (cfg.httpConfig == "") ''
+    ${optionalString (cfg.eventsConfig != "" || cfg.config == "") ''
+    events {
+      ${cfg.eventsConfig}
+    }
+    ''}
+
+    ${optionalString (cfg.httpConfig == "" && cfg.config == "") ''
     http {
       include ${cfg.package}/conf/mime.types;
       include ${cfg.package}/conf/fastcgi.conf;
@@ -78,7 +92,7 @@ let
       ${optionalString cfg.statusPage ''
         server {
           listen 80;
-          listen [::]:80;
+          ${optionalString enableIPv6 "listen [::]:80;" }
 
           server_name localhost;
 
@@ -86,7 +100,7 @@ let
             stub_status on;
             access_log off;
             allow 127.0.0.1;
-            allow ::1;
+            ${optionalString enableIPv6 "allow ::1;"}
             deny all;
           }
         }
@@ -105,40 +119,44 @@ let
     ${cfg.appendConfig}
   '';
 
-  vhosts = concatStringsSep "\n" (mapAttrsToList (serverName: vhost:
+  vhosts = concatStringsSep "\n" (mapAttrsToList (vhostName: vhost:
       let
+        serverName = vhost.serverName;
         ssl = vhost.enableSSL || vhost.forceSSL;
         port = if vhost.port != null then vhost.port else (if ssl then 443 else 80);
         listenString = toString port + optionalString ssl " ssl http2"
-          + optionalString vhost.default " default";
-        acmeLocation = optionalString vhost.enableACME ''
+          + optionalString vhost.default " default_server";
+        acmeLocation = optionalString vhost.enableACME (''
           location /.well-known/acme-challenge {
-            try_files $uri @acme-fallback;
+            ${optionalString (vhost.acmeFallbackHost != null) "try_files $uri @acme-fallback;"}
             root ${vhost.acmeRoot};
             auth_basic off;
           }
+        '' + (optionalString (vhost.acmeFallbackHost != null) ''
           location @acme-fallback {
             auth_basic off;
             proxy_pass http://${vhost.acmeFallbackHost};
           }
-        '';
+        ''));
       in ''
         ${optionalString vhost.forceSSL ''
           server {
-            listen 80 ${optionalString vhost.default "default"};
-            listen [::]:80 ${optionalString vhost.default "default"};
+            listen 80 ${optionalString vhost.default "default_server"};
+            ${optionalString enableIPv6
+              ''listen [::]:80 ${optionalString vhost.default "default_server"};''
+            }
 
             server_name ${serverName} ${concatStringsSep " " vhost.serverAliases};
             ${acmeLocation}
             location / {
-              return 301 https://$host${optionalString (port != 443) ":${port}"}$request_uri;
+              return 301 https://$host${optionalString (port != 443) ":${toString port}"}$request_uri;
             }
           }
         ''}
 
         server {
           listen ${listenString};
-          listen [::]:${listenString};
+          ${optionalString enableIPv6 "listen [::]:${listenString};"}
 
           server_name ${serverName} ${concatStringsSep " " vhost.serverAliases};
           ${acmeLocation}
@@ -151,7 +169,7 @@ let
             ssl_certificate_key ${vhost.sslCertificateKey};
           ''}
 
-          ${optionalString (vhost.basicAuth != {}) (mkBasicAuth serverName vhost.basicAuth)}
+          ${optionalString (vhost.basicAuth != {}) (mkBasicAuth vhostName vhost.basicAuth)}
 
           ${mkLocations vhost.locations}
 
@@ -162,12 +180,14 @@ let
   mkLocations = locations: concatStringsSep "\n" (mapAttrsToList (location: config: ''
     location ${location} {
       ${optionalString (config.proxyPass != null) "proxy_pass ${config.proxyPass};"}
+      ${optionalString (config.index != null) "index ${config.index};"}
+      ${optionalString (config.tryFiles != null) "try_files ${config.tryFiles};"}
       ${optionalString (config.root != null) "root ${config.root};"}
       ${config.extraConfig}
     }
   '') locations);
-  mkBasicAuth = serverName: authDef: let
-    htpasswdFile = pkgs.writeText "${serverName}.htpasswd" (
+  mkBasicAuth = vhostName: authDef: let
+    htpasswdFile = pkgs.writeText "${vhostName}.htpasswd" (
       concatStringsSep "\n" (mapAttrsToList (user: password: ''
         ${user}:{PLAIN}${password}
       '') authDef)
@@ -233,9 +253,12 @@ in
       };
 
       config = mkOption {
-        default = "events {}";
+        default = "";
         description = "
           Verbatim nginx.conf configuration.
+          This is mutually exclusive with the structured configuration
+          via virtualHosts and the recommendedXyzSettings configuration
+          options. See appendConfig for appending to the generated http block.
         ";
       };
 
@@ -263,13 +286,21 @@ in
         ";
       };
 
+      eventsConfig = mkOption {
+        type = types.lines;
+        default = "";
+        description = ''
+          Configuration lines to be set inside the events block.
+        '';
+      };
+
       appendHttpConfig = mkOption {
         type = types.lines;
         default = "";
         description = "
           Configuration lines to be appended to the generated http block.
-          This is mutually exclusive with using httpConfig for specifying the whole
-          http block verbatim.
+          This is mutually exclusive with using config and httpConfig for
+          specifying the whole http block verbatim.
         ";
       };
 
@@ -354,6 +385,7 @@ in
       description = "Nginx Web Server";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
+      stopIfChanged = false;
       preStart =
         ''
         mkdir -p ${cfg.stateDir}/logs
@@ -370,12 +402,20 @@ in
     };
 
     security.acme.certs = filterAttrs (n: v: v != {}) (
-      mapAttrs (vhostName: vhostConfig:
-        optionalAttrs vhostConfig.enableACME {
-          webroot = vhostConfig.acmeRoot;
-          extraDomains = genAttrs vhostConfig.serverAliases (alias: null);
-        }
-      ) virtualHosts
+      let
+        vhostsConfigs = mapAttrsToList (vhostName: vhostConfig: vhostConfig) virtualHosts;
+        acmeEnabledVhosts = filter (vhostConfig: vhostConfig.enableACME) vhostsConfigs;
+        acmePairs = map (vhostConfig: { name = vhostConfig.serverName; value = {
+            user = cfg.user;
+            group = lib.mkDefault cfg.group;
+            webroot = vhostConfig.acmeRoot;
+            extraDomains = genAttrs vhostConfig.serverAliases (alias: null);
+            postRun = ''
+              systemctl reload nginx
+            '';
+          }; }) acmeEnabledVhosts;
+      in
+        listToAttrs acmePairs
     );
 
     users.extraUsers = optionalAttrs (cfg.user == "nginx") (singleton

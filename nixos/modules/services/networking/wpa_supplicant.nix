@@ -12,11 +12,13 @@ let
       psk = if networkConfig.psk != null
         then ''"${networkConfig.psk}"''
         else networkConfig.pskRaw;
+      priority = networkConfig.priority;
     in ''
       network={
         ssid="${ssid}"
         ${optionalString (psk != null) ''psk=${psk}''}
         ${optionalString (psk == null) ''key_mgmt=NONE''}
+        ${optionalString (priority != null) ''priority=${toString priority}''}
       }
     '') cfg.networks)}
   '' else "/etc/wpa_supplicant.conf";
@@ -68,6 +70,19 @@ in {
                 Mutually exclusive with <varname>psk</varname>.
               '';
             };
+            priority = mkOption {
+              type = types.nullOr types.int;
+              default = null;
+              description = ''
+                By default, all networks will get same priority group (0). If some of the
+                networks are more desirable, this field can be used to change the order in
+                which wpa_supplicant goes through the networks when selecting a BSS. The
+                priority groups will be iterated in decreasing priority (i.e., the larger the
+                priority value, the sooner the network is matched against the scan results).
+                Within each priority group, networks will be selected based on security
+                policy, signal strength, etc.
+              '';
+            };
           };
         });
         description = ''
@@ -111,57 +126,56 @@ in {
     };
   };
 
-  config = mkMerge [
-    (mkIf cfg.enable {
-      assertions = flip mapAttrsToList cfg.networks (name: cfg: {
-        assertion = cfg.psk == null || cfg.pskRaw == null;
-        message = ''networking.wireless."${name}".psk and networking.wireless."${name}".pskRaw are mutually exclusive'';
-      });
+  config = mkIf cfg.enable {
+    assertions = flip mapAttrsToList cfg.networks (name: cfg: {
+      assertion = cfg.psk == null || cfg.pskRaw == null;
+      message = ''networking.wireless."${name}".psk and networking.wireless."${name}".pskRaw are mutually exclusive'';
+    });
 
-      environment.systemPackages =  [ pkgs.wpa_supplicant ];
+    environment.systemPackages =  [ pkgs.wpa_supplicant ];
 
-      services.dbus.packages = [ pkgs.wpa_supplicant ];
+    services.dbus.packages = [ pkgs.wpa_supplicant ];
 
-      # FIXME: start a separate wpa_supplicant instance per interface.
-      systemd.services.wpa_supplicant = let
-        ifaces = cfg.interfaces;
-        deviceUnit = interface: [ "sys-subsystem-net-devices-${interface}.device" ];
-      in {
-        description = "WPA Supplicant";
+    # FIXME: start a separate wpa_supplicant instance per interface.
+    systemd.services.wpa_supplicant = let
+      ifaces = cfg.interfaces;
+      deviceUnit = interface: [ "sys-subsystem-net-devices-${interface}.device" ];
+    in {
+      description = "WPA Supplicant";
 
-        after = [ "network-interfaces.target" ] ++ lib.concatMap deviceUnit ifaces;
-        requires = lib.concatMap deviceUnit ifaces;
-        wantedBy = [ "network.target" ];
+      after = lib.concatMap deviceUnit ifaces;
+      before = [ "network.target" ];
+      wants = [ "network.target" ];
+      requires = lib.concatMap deviceUnit ifaces;
+      wantedBy = [ "multi-user.target" ];
 
-        path = [ pkgs.wpa_supplicant ];
+      path = [ pkgs.wpa_supplicant ];
 
-        script = ''
-          ${if ifaces == [] then ''
-            for i in $(cd /sys/class/net && echo *); do
-              DEVTYPE=
-              source /sys/class/net/$i/uevent
-              if [ "$DEVTYPE" = "wlan" -o -e /sys/class/net/$i/wireless ]; then
-                ifaces="$ifaces''${ifaces:+ -N} -i$i"
-              fi
-            done
-          '' else ''
-            ifaces="${concatStringsSep " -N " (map (i: "-i${i}") ifaces)}"
-          ''}
-          exec wpa_supplicant -s -u -D${cfg.driver} -c ${configFile} $ifaces
-        '';
-      };
-
-      powerManagement.resumeCommands = ''
-        ${config.systemd.package}/bin/systemctl try-restart wpa_supplicant
+      script = ''
+        ${if ifaces == [] then ''
+          for i in $(cd /sys/class/net && echo *); do
+            DEVTYPE=
+            source /sys/class/net/$i/uevent
+            if [ "$DEVTYPE" = "wlan" -o -e /sys/class/net/$i/wireless ]; then
+              ifaces="$ifaces''${ifaces:+ -N} -i$i"
+            fi
+          done
+        '' else ''
+          ifaces="${concatStringsSep " -N " (map (i: "-i${i}") ifaces)}"
+        ''}
+        exec wpa_supplicant -s -u -D${cfg.driver} -c ${configFile} $ifaces
       '';
+    };
 
-      # Restart wpa_supplicant when a wlan device appears or disappears.
-      services.udev.extraRules = ''
-        ACTION=="add|remove", SUBSYSTEM=="net", ENV{DEVTYPE}=="wlan", RUN+="${config.systemd.package}/bin/systemctl try-restart wpa_supplicant.service"
-      '';
-    })
-    {
-      meta.maintainers = with lib.maintainers; [ globin ];
-    }
-  ];
+    powerManagement.resumeCommands = ''
+      ${config.systemd.package}/bin/systemctl try-restart wpa_supplicant
+    '';
+
+    # Restart wpa_supplicant when a wlan device appears or disappears.
+    services.udev.extraRules = ''
+      ACTION=="add|remove", SUBSYSTEM=="net", ENV{DEVTYPE}=="wlan", RUN+="${config.systemd.package}/bin/systemctl try-restart wpa_supplicant.service"
+    '';
+  };
+
+  meta.maintainers = with lib.maintainers; [ globin ];
 }

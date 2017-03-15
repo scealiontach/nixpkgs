@@ -5,12 +5,18 @@ stdenv.mkDerivation {
 
   inherit src patches;
 
-  postInstall = ''
-    ln -s $out/bin/wish* $out/bin/wish
-  '';
+  outputs = [ "out" "man" "dev" ];
+
+  setOutputFlags = false;
 
   preConfigure = ''
+    configureFlagsArray+=(--mandir=$man/share/man --enable-man-symlinks)
     cd unix
+  '';
+
+  postInstall = ''
+    ln -s $out/bin/wish* $out/bin/wish
+    cp ../{unix,generic}/*.h $out/include
   '';
 
   configureFlags = [

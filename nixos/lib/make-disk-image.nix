@@ -7,10 +7,19 @@
 , # The size of the disk, in megabytes.
   diskSize
 
+  # The files and directories to be placed in the target file system.
+  # This is a list of attribute sets {source, target} where `source'
+  # is the file system object (regular file or directory) to be
+  # grafted in the file system at path `target'.
+, contents ? []
+
 , # Whether the disk should be partitioned (with a single partition
   # containing the root filesystem) or contain the root filesystem
   # directly.
   partitioned ? true
+
+  # Whether to invoke switch-to-configuration boot during image creation
+, installBootLoader ? true
 
 , # The root file system type.
   fsType ? "ext4"
@@ -23,6 +32,10 @@
   postVM ? ""
 
 , name ? "nixos-disk-image"
+
+  # This prevents errors while checking nix-store validity, see
+  # https://github.com/NixOS/nix/issues/1134
+, fixValidity ? true
 
 , format ? "raw"
 }:
@@ -38,7 +51,14 @@ pkgs.vmTools.runInLinuxVM (
           ${pkgs.vmTools.qemu}/bin/qemu-img create -f ${format} $diskImage "${toString diskSize}M"
           mv closure xchg/
         '';
-      buildInputs = [ pkgs.utillinux pkgs.perl pkgs.e2fsprogs pkgs.parted ];
+      buildInputs = with pkgs; [ utillinux perl e2fsprogs parted rsync ];
+
+      # I'm preserving the line below because I'm going to search for it across nixpkgs to consolidate
+      # image building logic. The comment right below this now appears in 4 different places in nixpkgs :)
+      # !!! should use XML.
+      sources = map (x: x.source) contents;
+      targets = map (x: x.target) contents;
+
       exportReferencesGraph =
         [ "closure" config.system.build.toplevel ];
       inherit postVM;
@@ -58,46 +78,29 @@ pkgs.vmTools.runInLinuxVM (
 
       # Create an empty filesystem and mount it.
       mkfs.${fsType} -L nixos $rootDisk
-      ${optionalString (fsType == "ext4") ''
-        tune2fs -c 0 -i 0 $rootDisk
-      ''}
       mkdir /mnt
       mount $rootDisk /mnt
 
-      # The initrd expects these directories to exist.
-      mkdir /mnt/dev /mnt/proc /mnt/sys
-
-      mount -o bind /proc /mnt/proc
-      mount -o bind /dev /mnt/dev
-      mount -o bind /sys /mnt/sys
-
-      # Copy all paths in the closure to the filesystem.
-      storePaths=$(perl ${pkgs.pathsFromGraph} /tmp/xchg/closure)
-
-      mkdir -p /mnt/nix/store
-      echo "copying everything (will take a while)..."
-      set -f
-      cp -prd $storePaths /mnt/nix/store/
-
       # Register the paths in the Nix database.
       printRegistration=1 perl ${pkgs.pathsFromGraph} /tmp/xchg/closure | \
-          chroot /mnt ${config.nix.package.out}/bin/nix-store --load-db --option build-users-group ""
+          ${config.nix.package.out}/bin/nix-store --load-db --option build-users-group ""
 
-      # Add missing size/hash fields to the database. FIXME:
-      # exportReferencesGraph should provide these directly.
-      chroot /mnt ${config.nix.package.out}/bin/nix-store --verify --check-contents
+      ${if fixValidity then ''
+        # Add missing size/hash fields to the database. FIXME:
+        # exportReferencesGraph should provide these directly.
+        ${config.nix.package.out}/bin/nix-store --verify --check-contents --option build-users-group ""
+      '' else ""}
 
-      # Create the system profile to allow nixos-rebuild to work.
-      chroot /mnt ${config.nix.package.out}/bin/nix-env --option build-users-group "" \
-          -p /nix/var/nix/profiles/system --set ${config.system.build.toplevel}
+      # In case the bootloader tries to write to /dev/sda…
+      ln -s vda /dev/xvda
+      ln -s vda /dev/sda
 
-      # `nixos-rebuild' requires an /etc/NIXOS.
-      mkdir -p /mnt/etc
-      touch /mnt/etc/NIXOS
-
-      # `switch-to-configuration' requires a /bin/sh
-      mkdir -p /mnt/bin
-      ln -s ${config.system.build.binsh}/bin/sh /mnt/bin/sh
+      # Install the closure onto the image
+      USER=root ${config.system.build.nixos-install}/bin/nixos-install \
+        --closure ${config.system.build.toplevel} \
+        --no-channel-copy \
+        --no-root-passwd \
+        ${optionalString (!installBootLoader) "--no-bootloader"}
 
       # Install a configuration.nix.
       mkdir -p /mnt/etc/nixos
@@ -105,15 +108,48 @@ pkgs.vmTools.runInLinuxVM (
         cp ${configFile} /mnt/etc/nixos/configuration.nix
       ''}
 
-      # Generate the GRUB menu.
-      ln -s vda /dev/xvda
-      ln -s vda /dev/sda
-      chroot /mnt ${config.system.build.toplevel}/bin/switch-to-configuration boot
+      # Remove /etc/machine-id so that each machine cloning this image will get its own id
+      rm -f /mnt/etc/machine-id
 
-      umount /mnt/proc /mnt/dev /mnt/sys
+      # Copy arbitrary other files into the image
+      # Semi-shamelessly copied from make-etc.sh. I (@copumpkin) shall factor this stuff out as part of
+      # https://github.com/NixOS/nixpkgs/issues/23052.
+      set -f
+      sources_=($sources)
+      targets_=($targets)
+      set +f
+
+      for ((i = 0; i < ''${#targets_[@]}; i++)); do
+        source="''${sources_[$i]}"
+        target="''${targets_[$i]}"
+
+        if [[ "$source" =~ '*' ]]; then
+
+          # If the source name contains '*', perform globbing.
+          mkdir -p /mnt/$target
+          for fn in $source; do
+            rsync -a --no-o --no-g "$fn" /mnt/$target/
+          done
+
+        else
+
+          mkdir -p /mnt/$(dirname $target)
+          if ! [ -e /mnt/$target ]; then
+            rsync -a --no-o --no-g $source /mnt/$target
+          else
+            echo "duplicate entry $target -> $source"
+            exit 1
+          fi
+        fi
+      done
+
       umount /mnt
 
-      # Do a fsck to make sure resize2fs works.
-      fsck.${fsType} -f -y $rootDisk
+      # Make sure resize2fs works. Note that resize2fs has stricter criteria for resizing than a normal
+      # mount, so the `-c 0` and `-i 0` don't affect it. Setting it to `now` doesn't produce deterministic
+      # output, of course, but we can fix that when/if we start making images deterministic.
+      ${optionalString (fsType == "ext4") ''
+        tune2fs -T now -c 0 -i 0 $rootDisk
+      ''}
     ''
 )

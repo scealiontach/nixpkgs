@@ -51,7 +51,7 @@ let
     export PS1='${name}-chrootenv:\u@\h:\w\$ '
     export LOCALE_ARCHIVE='/usr/lib/locale/locale-archive'
     export LD_LIBRARY_PATH='/run/opengl-driver/lib:/run/opengl-driver-32/lib:/usr/lib:/usr/lib32'
-    export PATH='/var/setuid-wrappers:/usr/bin:/usr/sbin'
+    export PATH='/run/wrappers/bin:/usr/bin:/usr/sbin'
     export PKG_CONFIG_PATH=/usr/lib/pkgconfig
 
     # Force compilers to look in default search paths
@@ -89,6 +89,7 @@ let
 
       # symlink other core stuff
       ln -s /host/etc/localtime localtime
+      ln -s /host/etc/zoneinfo zoneinfo
       ln -s /host/etc/machine-id machine-id
       ln -s /host/etc/os-release os-release
 

@@ -1,18 +1,17 @@
-{ newScope, stdenv, makeWrapper, makeDesktopItem, writeScript
+{ newScope, stdenv, makeWrapper, makeDesktopItem, ed
 
 # package customization
 , channel ? "stable"
-, enableSELinux ? false
 , enableNaCl ? false
 , enableHotwording ? false
-, gnomeSupport ? false
+, gnomeSupport ? false, gnome ? null
 , gnomeKeyringSupport ? false
 , proprietaryCodecs ? true
 , enablePepperFlash ? false
 , enableWideVine ? false
 , cupsSupport ? true
 , pulseSupport ? false
-, hiDPISupport ? false
+, commandLineArgs ? ""
 }:
 
 let
@@ -22,9 +21,9 @@ let
     upstream-info = (callPackage ./update.nix {}).getChannel channel;
 
     mkChromiumDerivation = callPackage ./common.nix {
-      inherit enableSELinux enableNaCl enableHotwording gnomeSupport
+      inherit enableNaCl enableHotwording gnomeSupport gnome
               gnomeKeyringSupport proprietaryCodecs cupsSupport pulseSupport
-              hiDPISupport;
+              enableWideVine;
     };
 
     browser = callPackage ./browser.nix { inherit channel; };
@@ -66,47 +65,49 @@ let
 in stdenv.mkDerivation {
   name = "chromium${suffix}-${chromium.browser.version}";
 
-  buildInputs = [ makeWrapper ];
+  buildInputs = [ makeWrapper ed ];
 
   outputs = ["out" "sandbox"];
 
   buildCommand = let
     browserBinary = "${chromium.browser}/libexec/chromium/chromium";
     getWrapperFlags = plugin: "$(< \"${plugin}/nix-support/wrapper-flags\")";
-    launchScript = writeScript "chromium" ''
-      #! ${stdenv.shell}
-
-      if [ -x "/var/setuid-wrappers/${sandboxExecutableName}" ]
-      then
-        export CHROME_DEVEL_SANDBOX="/var/setuid-wrappers/${sandboxExecutableName}"
-      else
-        export CHROME_DEVEL_SANDBOX="@sandbox@/bin/${sandboxExecutableName}"
-      fi
-
-      # libredirect causes chromium to deadlock on startup
-      export LD_PRELOAD="$(echo -n "$LD_PRELOAD" | tr ':' '\n' | grep -v /lib/libredirect\\.so$ | tr '\n' ':')"
-
-      exec @out@/bin/.chromium-wrapped "''${extraFlagsArray[@]}" "$@"
-    '';
   in with stdenv.lib; ''
-    mkdir -p "$out/bin" "$out/share/applications"
+    mkdir -p "$out/bin"
 
-    ln -s "${chromium.browser}/share" "$out/share"
-    eval makeWrapper "${browserBinary}" "$out/bin/.chromium-wrapped" \
+    eval makeWrapper "${browserBinary}" "$out/bin/chromium" \
+      ${commandLineArgs} \
       ${concatMapStringsSep " " getWrapperFlags chromium.plugins.enabled}
 
-    cp -v "${launchScript}" "$out/bin/chromium"
-    substituteInPlace $out/bin/chromium --replace @out@ $out --replace @sandbox@ $sandbox
-    chmod 755 "$out/bin/chromium"
+    ed -v -s "$out/bin/chromium" << EOF
+    2i
+
+    if [ -x "/run/wrappers/bin/${sandboxExecutableName}" ]
+    then
+      export CHROME_DEVEL_SANDBOX="/run/wrappers/bin/${sandboxExecutableName}"
+    else
+      export CHROME_DEVEL_SANDBOX="$sandbox/bin/${sandboxExecutableName}"
+    fi
+
+    # libredirect causes chromium to deadlock on startup
+    export LD_PRELOAD="\$(echo -n "\$LD_PRELOAD" | tr ':' '\n' | grep -v /lib/libredirect\\\\.so$ | tr '\n' ':')"
+
+    .
+    w
+    EOF
 
     ln -sv "${chromium.browser.sandbox}" "$sandbox"
 
     ln -s "$out/bin/chromium" "$out/bin/chromium-browser"
-    ln -s "${chromium.browser}/share/icons" "$out/share/icons"
+
+    mkdir -p "$out/share/applications"
+    for f in '${chromium.browser}'/share/*; do
+      ln -s -t "$out/share/" "$f"
+    done
     cp -v "${desktopItem}/share/applications/"* "$out/share/applications"
   '';
 
-  inherit (chromium.browser) meta packageName;
+  inherit (chromium.browser) meta packageName version;
 
   passthru = {
     inherit (chromium) upstream-info browser;

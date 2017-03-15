@@ -24,6 +24,8 @@ let
 
     [connection]
     ipv6.ip6-privacy=2
+    ethernet.cloned-mac-address=${cfg.ethernet.macAddress}
+    wifi.cloned-mac-address=${cfg.wifi.macAddress}
   '';
 
   /*
@@ -52,14 +54,6 @@ let
     });
   '';
 
-  ipUpScript = writeScript "01nixos-ip-up" ''
-    #!/bin/sh
-    if test "$2" = "up"; then
-      ${config.systemd.package}/bin/systemctl start ip-up.target
-      ${config.systemd.package}/bin/systemctl start network-online.target
-    fi
-  '';
-
   ns = xs: writeText "nameservers" (
     concatStrings (map (s: "nameserver ${s}\n") xs)
   );
@@ -79,6 +73,19 @@ let
     "basic" = "";
     "pre-up" = "pre-up.d/";
     "pre-down" = "pre-down.d/";
+  };
+
+  macAddressOpt = mkOption {
+    type = types.either types.str (types.enum ["permanent" "preserve" "random" "stable"]);
+    default = "preserve";
+    example = "00:11:22:33:44:55";
+    description = ''
+      "XX:XX:XX:XX:XX:XX": MAC address of the interface.
+      <literal>permanent</literal>: use the permanent MAC address of the device.
+      <literal>preserve</literal>: don’t change the MAC address of the device upon activation.
+      <literal>random</literal>: generate a randomized value upon each connect.
+      <literal>stable</literal>: generate a stable, hashed MAC address.
+    '';
   };
 
 in {
@@ -148,6 +155,9 @@ in {
         '';
       };
 
+      ethernet.macAddress = macAddressOpt;
+      wifi.macAddress = macAddressOpt;
+
       dispatcherScripts = mkOption {
         type = types.listOf (types.submodule {
           options = {
@@ -182,15 +192,12 @@ in {
 
     assertions = [{
       assertion = config.networking.wireless.enable == false;
-      message = "You can not use networking.networkmanager with services.networking.wireless";
+      message = "You can not use networking.networkmanager with networking.wireless";
     }];
 
     boot.kernelModules = [ "ppp_mppe" ]; # Needed for most (all?) PPTP VPN connections.
 
     environment.etc = with cfg.basePackages; [
-      { source = ipUpScript;
-        target = "NetworkManager/dispatcher.d/01nixos-ip-up";
-      }
       { source = configFile;
         target = "NetworkManager/NetworkManager.conf";
       }
@@ -208,6 +215,9 @@ in {
       }
       { source = "${networkmanager_l2tp}/etc/NetworkManager/VPN/nm-l2tp-service.name";
         target = "NetworkManager/VPN/nm-l2tp-service.name";
+      }
+      { source = "${networkmanager_strongswan}/etc/NetworkManager/VPN/nm-strongswan-service.name";
+        target = "NetworkManager/VPN/nm-strongswan-service.name";
       }
     ] ++ optional (cfg.appendNameservers == [] || cfg.insertNameservers == [])
            { source = overrideNameserversScript;
@@ -235,25 +245,21 @@ in {
 
     systemd.packages = cfg.packages;
 
-    # Create an initialisation service that both starts
-    # NetworkManager when network.target is reached,
-    # and sets up necessary directories for NM.
-    systemd.services."networkmanager-init" = {
-      description = "NetworkManager initialisation";
+    systemd.services."network-manager" = {
       wantedBy = [ "network.target" ];
-      wants = [ "network-manager.service" ];
-      before = [ "network-manager.service" ];
-      script = ''
+      restartTriggers = [ configFile ];
+
+      preStart = ''
         mkdir -m 700 -p /etc/NetworkManager/system-connections
         mkdir -m 755 -p ${stateDirs}
       '';
-      serviceConfig.Type = "oneshot";
     };
 
     # Turn off NixOS' network management
     networking = {
       useDHCP = false;
-      wireless.enable = false;
+      # use mkDefault to trigger the assertion about the conflict above
+      wireless.enable = lib.mkDefault false;
     };
 
     powerManagement.resumeCommands = ''

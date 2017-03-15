@@ -47,6 +47,10 @@ stdenv.mkDerivation rec {
   buildInputs = [ ncurses libusb freetype gettext devicemapper ]
     ++ optional doCheck qemu;
 
+  hardeningDisable = [ "stackprotector" "pic" ];
+
+  NIX_CFLAGS_COMPILE = "-Wno-error"; # generated code redefines yyfree
+
   preConfigure =
     '' for i in "tests/util/"*.in
        do

@@ -28,6 +28,10 @@ in
     buildInputs = attrs.buildInputs ++ [ xorg.mkfontscale ];
   };
 
+  fontbhttf = attrs: attrs // {
+    meta = attrs.meta // { license = lib.licenses.unfreeRedistributable; };
+  };
+
   fontcursormisc = attrs: attrs // {
     buildInputs = attrs.buildInputs ++ [ xorg.mkfontscale ];
   };
@@ -53,10 +57,6 @@ in
     tradcpp = if stdenv.isDarwin then args.tradcpp else null;
   };
 
-  intelgputools = attrs: attrs // {
-    buildInputs = attrs.buildInputs ++ [ args.cairo args.libunwind ];
-  };
-
   mkfontdir = attrs: attrs // {
     preBuild = "substituteInPlace mkfontdir.in --replace @bindir@ ${xorg.mkfontscale}/bin";
   };
@@ -73,7 +73,7 @@ in
   libxcb = attrs : attrs // {
     nativeBuildInputs = [ args.python ];
     configureFlags = "--enable-xkb --enable-xinput";
-    outputs = [ "dev" "out" "doc" ];
+    outputs = [ "out" "dev" "doc" ];
   };
 
   xcbproto = attrs : attrs // {
@@ -81,7 +81,7 @@ in
   };
 
   libX11 = attrs: attrs // {
-    outputs = [ "dev" "out" "man" ];
+    outputs = [ "out" "dev" "man" ];
     preConfigure = setMalloc0ReturnsNullCrossCompiling + ''
       sed 's,^as_dummy.*,as_dummy="\$PATH",' -i configure
     '';
@@ -101,15 +101,15 @@ in
   };
 
   libXau = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
   };
 
   libXdmcp = attrs: attrs // {
-    outputs = [ "dev" "out" "doc" ];
+    outputs = [ "out" "dev" "doc" ];
   };
 
   libXfont = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
     propagatedBuildInputs = [ args.freetype ]; # propagate link reqs. like bzip2
     # prevents "misaligned_stack_error_entering_dyld_stub_binder"
     configureFlags = lib.optionals isDarwin [
@@ -118,7 +118,7 @@ in
   };
 
   libXxf86vm = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
     preConfigure = setMalloc0ReturnsNullCrossCompiling;
   };
 
@@ -131,7 +131,7 @@ in
     '';
     propagatedBuildInputs = [ xorg.libSM ];
     CPP = stdenv.lib.optionalString stdenv.isDarwin "clang -E -";
-    outputs = [ "dev" "out" "docdev" ];
+    outputs = [ "out" "dev" "devdoc" ];
   };
 
   # See https://bugs.freedesktop.org/show_bug.cgi?id=47792
@@ -145,29 +145,29 @@ in
   };
 
   libICE = attrs: attrs // {
-    outputs = [ "dev" "out" "doc" ];
+    outputs = [ "out" "dev" "doc" ];
   };
 
   libXcomposite = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
     propagatedBuildInputs = [ xorg.libXfixes ];
   };
 
   libXaw = attrs: attrs // {
-    outputs = [ "dev" "out" "docdev" ];
+    outputs = [ "out" "dev" "devdoc" ];
     propagatedBuildInputs = [ xorg.libXmu ];
   };
 
   libXcursor = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
   };
 
   libXdamage = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
   };
 
   libXft = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
     propagatedBuildInputs = [ xorg.libXrender args.freetype args.fontconfig ];
     preConfigure = setMalloc0ReturnsNullCrossCompiling;
     # the include files need ft2build.h, and Requires.private isn't enough for us
@@ -177,59 +177,70 @@ in
   };
 
   libXext = attrs: attrs // {
-    outputs = [ "dev" "out" "doc" ];
+    outputs = [ "out" "dev" "doc" ];
     propagatedBuildInputs = [ xorg.xproto xorg.libXau ];
     preConfigure = setMalloc0ReturnsNullCrossCompiling;
   };
 
   libXfixes = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
   };
 
   libXi = attrs: attrs // {
-    outputs = [ "dev" "out" "doc" ];
+    outputs = [ "out" "dev" "doc" ];
+    propagatedBuildInputs = [ xorg.libXfixes ];
   };
 
   libXinerama = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
   };
 
   libXmu = attrs: attrs // {
-    outputs = [ "dev" "out" "doc" ];
+    outputs = [ "out" "dev" "doc" ];
     buildFlags = ''BITMAP_DEFINES=-DBITMAPDIR=\"/no-such-path\"'';
   };
 
   libXrandr = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
     preConfigure = setMalloc0ReturnsNullCrossCompiling;
     propagatedBuildInputs = [xorg.libXrender];
   };
 
   libSM = attrs: attrs // {
-    outputs = [ "dev" "out" "doc" ];
+    outputs = [ "out" "dev" "doc" ];
     propagatedBuildInputs = [ xorg.libICE ];
   };
 
   libXrender = attrs: attrs // {
-    outputs = [ "dev" "out" "doc" ];
+    outputs = [ "out" "dev" "doc" ];
+    propagatedBuildInputs = [ xorg.renderproto ];
     preConfigure = setMalloc0ReturnsNullCrossCompiling;
   };
 
   libXres = attrs: attrs // {
-    outputs = [ "dev" "out" "docdev" ];
+    outputs = [ "out" "dev" "devdoc" ];
   };
 
   libXv = attrs: attrs // {
-    outputs = [ "dev" "out" "docdev" ];
+    outputs = [ "out" "dev" "devdoc" ];
   };
 
   libXvMC = attrs: attrs // {
-    outputs = [ "dev" "out" "doc" ];
+    outputs = [ "out" "dev" "doc" ];
     buildInputs = attrs.buildInputs ++ [xorg.renderproto];
   };
 
+  libXp = attrs: attrs // {
+    outputs = [ "out" "dev" ];
+  };
+
   libXpm = attrs: attrs // {
-    outputs = [ "dev" "out" "bin" ]; # tiny man in $bin
+    name = "libXpm-3.5.12";
+    src = args.fetchurl {
+      url = mirror://xorg/individual/lib/libXpm-3.5.12.tar.bz2;
+      sha256 = "1v5xaiw4zlhxspvx76y3hq4wpxv7mpj6parqnwdqvpj8vbinsspx";
+    };
+    outputs = [ "bin" "dev" "out" ]; # tiny man in $bin
     patchPhase = "sed -i '/USE_GETTEXT_TRUE/d' sxpm/Makefile.in cxpm/Makefile.in";
   };
 
@@ -237,11 +248,11 @@ in
     // { buildInputs = with xorg; attrs.buildInputs ++ [ libXext libXfixes libXrandr ]; };
 
   libxkbfile = attrs: attrs // {
-    outputs = [ "dev" "out" ]; # mainly to avoid propagation
+    outputs = [ "out" "dev" ]; # mainly to avoid propagation
   };
 
   libxshmfence = attrs: attrs // {
-    outputs = [ "dev" "out" ]; # mainly to avoid propagation
+    outputs = [ "out" "dev" ]; # mainly to avoid propagation
   };
 
   libpciaccess = attrs: attrs // {
@@ -265,32 +276,32 @@ in
   };
 
   xcbutil = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
   };
 
   xcbutilcursor = attrs: attrs // {
-    outputs = [ "dev" "out" ];
+    outputs = [ "out" "dev" ];
     meta = attrs.meta // { maintainers = [ stdenv.lib.maintainers.lovek323 ]; };
   };
 
   xcbutilimage = attrs: attrs // {
-    outputs = [ "dev" "out" ]; # mainly to get rid of propagating others
+    outputs = [ "out" "dev" ]; # mainly to get rid of propagating others
   };
 
   xcbutilkeysyms = attrs: attrs // {
-    outputs = [ "dev" "out" ]; # mainly to get rid of propagating others
+    outputs = [ "out" "dev" ]; # mainly to get rid of propagating others
   };
 
   xcbutilrenderutil = attrs: attrs // {
-    outputs = [ "dev" "out" ]; # mainly to get rid of propagating others
+    outputs = [ "out" "dev" ]; # mainly to get rid of propagating others
   };
 
   xcbutilwm = attrs: attrs // {
-    outputs = [ "dev" "out" ]; # mainly to get rid of propagating others
+    outputs = [ "out" "dev" ]; # mainly to get rid of propagating others
   };
 
   xf86inputevdev = attrs: attrs // {
-    outputs = [ "dev" "out" ]; # to get rid of xorgserver.dev; man is tiny
+    outputs = [ "out" "dev" ]; # to get rid of xorgserver.dev; man is tiny
     preBuild = "sed -e '/motion_history_proc/d; /history_size/d;' -i src/*.c";
     installFlags = "sdkdir=\${out}/include/xorg";
     buildInputs = attrs.buildInputs ++ [ args.mtdev args.libevdev ];
@@ -310,7 +321,7 @@ in
   };
 
   xf86inputsynaptics = attrs: attrs // {
-    outputs = [ "dev" "out" ]; # *.pc pulls xorgserver.dev
+    outputs = [ "out" "dev" ]; # *.pc pulls xorgserver.dev
     buildInputs = attrs.buildInputs ++ [args.mtdev args.libevdev];
     installFlags = "sdkdir=\${out}/include/xorg configdir=\${out}/share/X11/xorg.conf.d";
   };
@@ -323,15 +334,24 @@ in
     ];
   };
 
-  xf86videoati = attrs: attrs // {
-    NIX_CFLAGS_COMPILE = "-I${xorg.xorgserver}/include/xorg";
+  # Obsolete drivers that don't compile anymore.
+  xf86videoark        = attrs: attrs // { meta = attrs.meta // { broken = true; }; };
+  xf86videogeode      = attrs: attrs // { meta = attrs.meta // { broken = true; }; };
+  xf86videoglide      = attrs: attrs // { meta = attrs.meta // { broken = true; }; };
+  xf86videoi128       = attrs: attrs // { meta = attrs.meta // { broken = true; }; };
+  xf86videonewport    = attrs: attrs // { meta = attrs.meta // { broken = true; }; };
+  xf86videoopenchrome = attrs: attrs // { meta = attrs.meta // { broken = true; }; };
+  xf86videotga        = attrs: attrs // { meta = attrs.meta // { broken = true; }; };
+  xf86videov4l        = attrs: attrs // { meta = attrs.meta // { broken = true; }; };
+  xf86videovoodoo     = attrs: attrs // { meta = attrs.meta // { broken = true; }; };
+  xf86videowsfb       = attrs: attrs // { meta = attrs.meta // { broken = true; }; };
+
+  xf86videoamdgpu = attrs: attrs // {
+    configureFlags = [ "--with-xorg-conf-dir=$(out)/share/X11/xorg.conf.d" ];
   };
 
-  xf86videonv = attrs: attrs // {
-    patches = [( args.fetchpatch {
-      url = http://cgit.freedesktop.org/xorg/driver/xf86-video-nv/patch/?id=fc78fe98222b0204b8a2872a529763d6fe5048da;
-      sha256 = "0i2ddgqwj6cfnk8f4r73kkq3cna7hfnz7k3xj3ifx5v8mfiva6gw";
-    })];
+  xf86videoati = attrs: attrs // {
+    NIX_CFLAGS_COMPILE = "-I${xorg.xorgserver.dev or xorg.xorgserver}/include/xorg";
   };
 
   xf86videovmware = attrs: attrs // {
@@ -370,10 +390,16 @@ in
   };
 
   xorgserver = with xorg; attrs_passed:
-    # exchange attrs if fglrxCompat is set
+    # exchange attrs if abiCompat is set
     let
-      attrs = if !args.fglrxCompat then attrs_passed else
-        with args; {
+      attrs = with args;
+        if (args.abiCompat == null) then attrs_passed
+            # All this just for 1.19.2, as the tarball is incorrectly autotoolized.
+            // {
+              nativeBuildInputs = [ utilmacros fontutil ];
+              preConfigure = "libtoolize --force; aclocal; autoheader; automake -afi";
+            }
+        else if (args.abiCompat == "1.17") then {
           name = "xorg-server-1.17.4";
           builder = ./builder.sh;
           src = fetchurl {
@@ -382,7 +408,16 @@ in
           };
           buildInputs = [pkgconfig dri2proto dri3proto renderproto libdrm openssl libX11 libXau libXaw libxcb xcbutil xcbutilwm xcbutilimage xcbutilkeysyms xcbutilrenderutil libXdmcp libXfixes libxkbfile libXmu libXpm libXrender libXres libXt ];
           meta.platforms = stdenv.lib.platforms.unix;
-        };
+        } else if (args.abiCompat == "1.18") then {
+            name = "xorg-server-1.18.4";
+            builder = ./builder.sh;
+            src = fetchurl {
+              url = mirror://xorg/individual/xserver/xorg-server-1.18.4.tar.bz2;
+              sha256 = "1j1i3n5xy1wawhk95kxqdc54h34kg7xp4nnramba2q8xqfr5k117";
+            };
+            buildInputs = [pkgconfig dri2proto dri3proto renderproto libdrm openssl libX11 libXau libXaw libxcb xcbutil xcbutilwm xcbutilimage xcbutilkeysyms xcbutilrenderutil libXdmcp libXfixes libxkbfile libXmu libXpm libXrender libXres libXt ];
+            meta.platforms = stdenv.lib.platforms.unix;
+        } else throw "unsupported xorg abiCompat: ${args.abiCompat}";
 
     in attrs //
     (let
@@ -398,9 +433,10 @@ in
         damageproto xcmiscproto  bigreqsproto
         inputproto xextproto randrproto renderproto presentproto
         dri2proto dri3proto kbproto xineramaproto resourceproto scrnsaverproto videoproto
+        libXfont2
       ];
       # fix_segfault: https://bugs.freedesktop.org/show_bug.cgi?id=91316
-      commonPatches = [ ./xorgserver-xkbcomp-path.patch ];
+      commonPatches = [ ];
       # XQuartz requires two compilations: the first to get X / XQuartz,
       # and the second to get Xvfb, Xnest, etc.
       darwinOtherX = overrideDerivation xorgserver (oldAttrs: {
@@ -416,7 +452,7 @@ in
     in
       if (!isDarwin)
       then {
-        outputs = [ "dev" "out" ];
+        outputs = [ "out" "dev" ];
         buildInputs = [ makeWrapper ] ++ commonBuildInputs;
         propagatedBuildInputs = [ libpciaccess args.epoxy ] ++ commonPropagatedBuildInputs ++ lib.optionals stdenv.isLinux [
           args.udev
@@ -428,18 +464,15 @@ in
           "--enable-xcsecurity"         # enable SECURITY extension
           "--with-default-font-path="   # there were only paths containing "${prefix}",
                                         # and there are no fonts in this package anyway
+          "--with-xkb-bin-directory=${xorg.xkbcomp}/bin"
+          "--with-xkb-path=${xorg.xkeyboardconfig}/share/X11/xkb"
+          "--with-xkb-output=$out/share/X11/xkb/compiled"
           "--enable-glamor"
         ];
         postInstall = ''
-          rm -fr $out/share/X11/xkb/compiled
-          ln -s /var/tmp $out/share/X11/xkb/compiled
-          wrapProgram $out/bin/Xephyr \
-            --set XKB_BINDIR "${xorg.xkbcomp}/bin" \
-            --add-flags "-xkbdir ${xorg.xkeyboardconfig}/share/X11/xkb"
+          rm -fr $out/share/X11/xkb/compiled # otherwise X will try to write in it
           wrapProgram $out/bin/Xvfb \
-            --set XKB_BINDIR "${xorg.xkbcomp}/bin" \
-            --set XORG_DRI_DRIVER_PATH ${args.mesa}/lib/dri \
-            --add-flags "-xkbdir ${xorg.xkeyboardconfig}/share/X11/xkb"
+            --set XORG_DRI_DRIVER_PATH ${args.mesa}/lib/dri
           ( # assert() keeps runtime reference xorgserver-dev in xf86-video-intel and others
             cd "$dev"
             for f in include/xorg/*.h; do
@@ -484,7 +517,6 @@ in
         '';
         postInstall = ''
           rm -fr $out/share/X11/xkb/compiled
-          ln -s /var/tmp $out/share/X11/xkb/compiled
 
           cp -rT ${darwinOtherX}/bin $out/bin
           rm -f $out/bin/X
@@ -511,10 +543,6 @@ in
     configureFlags = "--with-cursordir=$(out)/share/icons";
   };
 
-  xinput = attrs: attrs // {
-    propagatedBuildInputs = [xorg.libXfixes];
-  };
-
   xinit = attrs: attrs // {
     stdenv = if isDarwin then args.clangStdenv else stdenv;
     buildInputs = attrs.buildInputs ++ lib.optional isDarwin args.bootstrap_cmds;
@@ -537,6 +565,21 @@ in
     nativeBuildInputs = [args.autoreconfHook xorg.utilmacros];
   };
 
+  xf86videoxgi = attrs: attrs // {
+    patches = [
+      # fixes invalid open mode
+      # https://cgit.freedesktop.org/xorg/driver/xf86-video-xgi/commit/?id=bd94c475035739b42294477cff108e0c5f15ef67
+      (args.fetchpatch {
+        url = "https://cgit.freedesktop.org/xorg/driver/xf86-video-xgi/patch/?id=bd94c475035739b42294477cff108e0c5f15ef67";
+        sha256 = "0myfry07655adhrpypa9rqigd6rfx57pqagcwibxw7ab3wjay9f6";
+      })
+      (args.fetchpatch {
+        url = "https://cgit.freedesktop.org/xorg/driver/xf86-video-xgi/patch/?id=78d1138dd6e214a200ca66fa9e439ee3c9270ec8";
+        sha256 = "0z3643afgrync280zrp531ija0hqxc5mrwjif9nh9lcnzgnz2d6d";
+      })
+    ];
+  };
+
   xwd = attrs: attrs // {
     buildInputs = with xorg; attrs.buildInputs ++ [libXt libxkbfile];
   };
@@ -557,4 +600,13 @@ in
     configureFlags = "--with-cpp=${args.mcpp}/bin/mcpp";
   };
 
+  sessreg = attrs: attrs // {
+    preBuild = "sed -i 's|gcc -E|gcc -E -P|' man/Makefile";
+  };
+
+  xrandr = attrs: attrs // {
+    postInstall = ''
+      rm $out/bin/xkeystone
+    '';
+  };
 }

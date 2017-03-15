@@ -1,15 +1,14 @@
-{ stdenv, fetchurl, autoreconfHook, pkgconfig, libX11, libxkbcommon, pango
-, cairo, glib, libxcb, xcbutil, xcbutilwm, libstartup_notification
-, i3Support ? false, i3
+{ stdenv, fetchurl, autoreconfHook, pkgconfig, libxkbcommon, pango, which, git
+, cairo, glib, libxcb, xcbutil, xcbutilwm, xcbutilxrm, libstartup_notification
 }:
 
 stdenv.mkDerivation rec {
-  version = "1.1.0";
+  version = "1.3.1";
   name = "rofi-${version}";
 
   src = fetchurl {
-    url = "https://github.com/DaveDavenport/rofi/releases/download/${version}/${name}.tar.xz";
-    sha256 = "1l8vl0mh7i0b1ycifqpg6392f5i4qxlv003m126skfk6fnlfq8hn";
+    url = "https://github.com/DaveDavenport/rofi/releases/download/${version}/${name}.tar.gz";
+    sha256 = "09i3vd8k6zqphrm382fglsmxc4q6dg00xddzl96kakszgvdd4qfs";
   };
 
   preConfigure = ''
@@ -18,9 +17,10 @@ stdenv.mkDerivation rec {
     sed -i 's/~root/~nobody/g' test/helper-expand.c
   '';
 
-  buildInputs = [ autoreconfHook pkgconfig libX11 libxkbcommon pango
-    cairo libstartup_notification libxcb xcbutil xcbutilwm
-  ] ++ stdenv.lib.optional i3Support i3;
+  buildInputs = [ autoreconfHook pkgconfig libxkbcommon pango cairo git
+    libstartup_notification libxcb xcbutil xcbutilwm xcbutilxrm which
+  ];
+  doCheck = true;
 
   meta = with stdenv.lib; {
     description = "Window switcher, run dialog and dmenu replacement";

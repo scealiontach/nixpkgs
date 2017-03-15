@@ -27,7 +27,6 @@ stdenv.mkDerivation {
     "--with-http_realip_module"
     "--with-http_addition_module"
     "--with-http_xslt_module"
-    "--with-http_image_filter_module"
     "--with-http_geoip_module"
     "--with-http_sub_module"
     "--with-http_dav_module"
@@ -44,19 +43,15 @@ stdenv.mkDerivation {
     # Install destination problems
     # "--with-http_perl_module"
   ] ++ optional withStream "--with-stream"
+    ++ optional (gd != null) "--with-http_image_filter_module"
     ++ optional (elem stdenv.system (with platforms; linux ++ freebsd)) "--with-file-aio"
     ++ map (mod: "--add-module=${mod.src}") modules;
 
   NIX_CFLAGS_COMPILE = [ "-I${libxml2.dev}/include/libxml2" ] ++ optional stdenv.isDarwin "-Wno-error=deprecated-declarations";
 
-  preConfigure = (concatMapStringsSep "\n" (mod: mod.preConfigure or "") modules)
-    + optionalString (hardening && (stdenv.cc.cc.isGNU or false)) ''
-      configureFlagsArray=(
-        --with-cc-opt="-fPIE -fstack-protector-all --param ssp-buffer-size=4 -O2 -D_FORTIFY_SOURCE=2"
-        --with-ld-opt="-pie -Wl,-z,relro,-z,now"
-      )
-    ''
-    ;
+  preConfigure = (concatMapStringsSep "\n" (mod: mod.preConfigure or "") modules);
+
+  hardeningEnable = [ "pie" ];
 
   postInstall = ''
     mv $out/sbin $out/bin

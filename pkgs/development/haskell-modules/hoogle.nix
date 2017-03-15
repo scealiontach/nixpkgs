@@ -23,8 +23,8 @@
 # This will build mmorph and monadControl, and have the hoogle installation
 # refer to their documentation via symlink so they are not garbage collected.
 
-{ lib, stdenv, hoogle, rehoo, writeText
-, ghc, packages ? [ ghc.ghc ]
+{ lib, stdenv, hoogle, writeText, ghc
+, packages
 }:
 
 let
@@ -40,50 +40,37 @@ let
     if !isGhcjs
     then "ghc"
     else "ghcjs";
-  docLibGlob =
+  ghcDocLibDir =
     if !isGhcjs
-    then ''share/doc/ghc*/html/libraries''
-    else ''doc/lib'';
+    then ghc.doc + ''/share/doc/ghc*/html/libraries''
+    else ghc     + ''/doc/lib'';
   # On GHCJS, use a stripped down version of GHC's prologue.txt
   prologue =
     if !isGhcjs
-    then "${ghc.doc}/${docLibGlob}/prologue.txt"
+    then "${ghcDocLibDir}/prologue.txt"
     else writeText "ghcjs-prologue.txt" ''
       This index includes documentation for many Haskell modules.
     '';
+
+  docPackages = lib.closePropagation packages;
+
 in
 stdenv.mkDerivation {
   name = "hoogle-local-0.1";
-  buildInputs = [hoogle rehoo];
+  buildInputs = [ghc hoogle];
 
   phases = [ "buildPhase" ];
 
-  docPackages = (lib.closePropagation packages);
+  inherit docPackages;
 
   buildPhase = ''
-    if [ -z "$docPackages" ]; then
-        echo "ERROR: The packages attribute has not been set"
-        exit 1
-    fi
-
     mkdir -p $out/share/doc/hoogle
 
-    function import_dbs() {
-        find $1 -name '*.txt' | while read f; do
-          newname=$(basename "$f" | tr '[:upper:]' '[:lower:]')
-          if [[ -f $f && ! -f ./$newname ]]; then
-            cp -p $f "./$newname"
-            hoogle convert -d "$(dirname $f)" "./$newname"
-          fi
-        done
-    }
-
     echo importing builtin packages
-    for docdir in ${ghc.doc}/${docLibGlob}/*; do
+    for docdir in ${ghcDocLibDir}/*; do
       name="$(basename $docdir)"
       ${opts isGhcjs ''docdir="$docdir/html"''}
       if [[ -d $docdir ]]; then
-        import_dbs $docdir
         ln -sfn $docdir $out/share/doc/hoogle/$name
       fi
     done
@@ -92,10 +79,9 @@ stdenv.mkDerivation {
     for i in $docPackages; do
       if [[ ! $i == $out ]]; then
         for docdir in $i/share/doc/*-${ghcName}-*/* $i/share/doc/*; do
-          name=`basename $docdir`
+          name="$(basename $docdir)"
           docdir=$docdir/html
           if [[ -d $docdir ]]; then
-            import_dbs $docdir
             ln -sfn $docdir $out/share/doc/hoogle/$name
           fi
         done
@@ -103,13 +89,7 @@ stdenv.mkDerivation {
     done
 
     echo building hoogle database
-    # FIXME: rehoo is marked as depricated on Hackage
-    chmod 644 *.hoo *.txt
-    rehoo -j$NIX_BUILD_CORES -c64 .
-
-    mv default.hoo .x
-    rm -fr downloads *.dep *.txt *.hoo
-    mv .x $out/share/doc/hoogle/default.hoo
+    hoogle generate --database $out/share/doc/hoogle/default.hoo --local=$out/share/doc/hoogle
 
     echo building haddock index
     # adapted from GHC's gen_contents_index

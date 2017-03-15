@@ -1,32 +1,25 @@
-{ stdenv, fetchFromGitHub, pkgconfig, intltool, gperf, libcap, kmod
+{ stdenv, fetchFromGitHub, fetchpatch, pkgconfig, intltool, gperf, libcap, kmod
 , zlib, xz, pam, acl, cryptsetup, libuuid, m4, utillinux, libffi
 , glib, kbd, libxslt, coreutils, libgcrypt, libgpgerror, libapparmor, audit, lz4
 , kexectools, libmicrohttpd, linuxHeaders ? stdenv.cc.libc.linuxHeaders, libseccomp
 , iptables, gnu-efi
 , autoreconfHook, gettext, docbook_xsl, docbook_xml_dtd_42, docbook_xml_dtd_45
-, enableKDbus ? false
 }:
 
 assert stdenv.isLinux;
 
 stdenv.mkDerivation rec {
-  version = "231";
+  version = "232";
   name = "systemd-${version}";
 
   src = fetchFromGitHub {
-    owner = "NixOS";
+    owner = "nixos";
     repo = "systemd";
-    rev = "124564dd451349ec12673a7d4836b4a7a2f8fb4e";
-    sha256 = "021b7filp1dlhic1iv54b821w7mj5595njvzns939pmn636ry4m5";
+    rev = "c110fc3504d7a2fa944575b347814f7e97d3c5a0";
+    sha256 = "19carch1adad70nifbqdx649kj5m8pgpiq27hh05ig38yrbmb2vz";
   };
 
-  /* gave up for now!
-  outputs = [ "out" "libudev" "doc" ]; # maybe: "dev"
-  # note: there are many references to ${systemd}/...
-  outputDev = "out";
-  propagatedBuildOutputs = "libudev";
-  */
-  outputs = [ "out" "man" ];
+  outputs = [ "out" "lib" "man" "dev" ];
 
   buildInputs =
     [ linuxHeaders pkgconfig intltool gperf libcap kmod xz pam acl
@@ -51,7 +44,6 @@ stdenv.mkDerivation rec {
       "--with-dbussystemservicedir=$(out)/share/dbus-1/system-services"
       "--with-dbussessionservicedir=$(out)/share/dbus-1/services"
       "--with-tty-gid=3" # tty in NixOS has gid 3
-      "--enable-compat-libs" # get rid of this eventually
       "--disable-tests"
 
       "--enable-lz4"
@@ -78,7 +70,9 @@ stdenv.mkDerivation rec {
       "--with-sysvinit-path="
       "--with-sysvrcnd-path="
       "--with-rc-local-script-path-stop=/etc/halt.local"
-    ] ++ (if enableKDbus then [ "--enable-kdbus" ] else [ "--disable-kdbus" ]);
+    ];
+
+  hardeningDisable = [ "stackprotector" ];
 
   preConfigure =
     ''
@@ -108,16 +102,6 @@ stdenv.mkDerivation rec {
 
       #export NIX_CFLAGS_LINK+=" -Wl,-rpath,$libudev/lib"
     '';
-
-  /*
-  makeFlags = [
-    "udevlibexecdir=$(libudev)/lib/udev"
-    # udev rules refer to $out, and anything but libs should probably go to $out
-    "udevrulesdir=$(out)/lib/udev/rules.d"
-    "udevhwdbdir=$(out)/lib/udev/hwdb.d"
-  ];
-  */
-
 
   PYTHON_BINARY = "${coreutils}/bin/env python"; # don't want a build time dependency on Python
 
@@ -170,26 +154,18 @@ stdenv.mkDerivation rec {
 
       rm -rf $out/etc/rpm
 
-      rm $out/lib/*.la
+      rm $lib/lib/*.la
 
       # "kernel-install" shouldn't be used on NixOS.
       find $out -name "*kernel-install*" -exec rm {} \;
-    ''; # */
-  /*
-      # Move lib(g)udev to a separate output. TODO: maybe split them up
-      #   to avoid libudev pulling glib
-      mkdir -p "$libudev/lib"
-      mv "$out"/lib/lib{,g}udev* "$libudev/lib/"
 
-      for i in "$libudev"/lib/*.la; do
-        substituteInPlace $i --replace "$out" "$libudev"
-      done
-      for i in "$out"/lib/pkgconfig/{libudev,gudev-1.0}.pc; do
-        substituteInPlace $i --replace "libdir=$out" "libdir=$libudev"
-      done
-  */
+      # Keep only libudev and libsystemd in the lib output.
+      mkdir -p $out/lib
+      mv $lib/lib/security $lib/lib/libnss* $out/lib/
+    ''; # */
 
   enableParallelBuilding = true;
+
   /*
   # some libs fail to link to liblzma and/or libffi
   postFixup = let extraLibs = stdenv.lib.makeLibraryPath [ xz.out libffi.out zlib.out ];

@@ -1,4 +1,4 @@
-{ fetchurl, stdenv, pkgconfig, cairo, xlibsWrapper, fontconfig, freetype, libsigcxx }:
+{ fetchurl, stdenv, pkgconfig, darwin, cairo, xlibsWrapper, fontconfig, freetype, libsigcxx }:
 let
   ver_maj = "1.12";
   ver_min = "0";
@@ -7,13 +7,20 @@ stdenv.mkDerivation rec {
   name = "cairomm-${ver_maj}.${ver_min}";
 
   src = fetchurl {
+    #url = "http://www.cairographics.org/releases/${name}.tar.gz";
+    # gnome doesn't have the latest version ATM; beware: same name but different hash
     url = "mirror://gnome/sources/cairomm/${ver_maj}/${name}.tar.xz";
     sha256 = "a54ada8394a86182525c0762e6f50db6b9212a2109280d13ec6a0b29bfd1afe6";
   };
 
+  outputs = [ "out" "dev" ];
+
   nativeBuildInputs = [ pkgconfig ];
   propagatedBuildInputs = [ cairo libsigcxx ];
-  buildInputs = [ fontconfig freetype ];
+  buildInputs = [ fontconfig freetype ]
+  ++ stdenv.lib.optionals stdenv.isDarwin (with darwin.apple_sdk.frameworks; [
+    ApplicationServices
+  ]);
 
   doCheck = true;
 
@@ -35,6 +42,6 @@ stdenv.mkDerivation rec {
     homepage = http://cairographics.org/;
 
     license = with licenses; [ lgpl2Plus mpl10 ];
-    platforms = platforms.linux;
+    platforms = platforms.unix;
   };
 }

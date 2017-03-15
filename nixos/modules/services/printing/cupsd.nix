@@ -4,7 +4,7 @@ with lib;
 
 let
 
-  inherit (pkgs) cups cups-pk-helper cups_filters gutenprint;
+  inherit (pkgs) cups cups-pk-helper cups-filters gutenprint;
 
   cfg = config.services.printing;
 
@@ -34,7 +34,7 @@ let
   bindir = pkgs.buildEnv {
     name = "cups-progs";
     paths =
-      [ cups.out additionalBackends cups_filters pkgs.ghostscript ]
+      [ cups.out additionalBackends cups-filters pkgs.ghostscript ]
       ++ optional cfg.gutenprint gutenprint
       ++ cfg.drivers;
     pathsToLink = [ "/lib/cups" "/share/cups" "/bin" ];
@@ -75,7 +75,7 @@ let
     '') cfg.listenAddresses}
     Listen /var/run/cups/cups.sock
 
-    SetEnv PATH ${bindir}/lib/cups/filter:${bindir}/bin
+    SetEnv PATH /var/lib/cups/path/lib/cups/filter:/var/lib/cups/path/bin
 
     DefaultShared ${if cfg.defaultShared then "Yes" else "No"}
 
@@ -310,6 +310,13 @@ in
             for i in *; do
               [ ! -e "/var/lib/cups/$i" ] && ln -s "${rootdir}/etc/cups/$i" "/var/lib/cups/$i"
             done
+
+            #update path reference
+            [ -L /var/lib/cups/path ] && \
+              rm /var/lib/cups/path
+            [ ! -e /var/lib/cups/path ] && \
+              ln -s ${bindir} /var/lib/cups/path
+
             ${optionalString cfg.gutenprint ''
               if [ -d /var/lib/cups/ppd ]; then
                 ${gutenprint}/bin/cups-genppdupdate -p /var/lib/cups/ppd
@@ -329,7 +336,7 @@ in
 
         path = [ cups ];
 
-        serviceConfig.ExecStart = "${cups_filters}/bin/cups-browsed";
+        serviceConfig.ExecStart = "${cups-filters}/bin/cups-browsed";
 
         restartTriggers = [ browsedFile ];
       };

@@ -1,27 +1,32 @@
-{ stdenv, fetchgit, makeWrapper, openresolv, coreutils }:
+{ stdenv, lib, fetchFromGitHub, makeWrapper, openresolv, coreutils, systemd }:
 
-stdenv.mkDerivation rec {
-  name = "update-resolv-conf-20141003";
+let
+  binPath = lib.makeBinPath [ coreutils openresolv systemd ];
 
-  src = fetchgit {
-    url = https://github.com/masterkorp/openvpn-update-resolv-conf/;
-    rev = "dd968419373bce71b22bbd26de962e89eb470670";
-    sha256 = "0j7mg66lqhgvhybgbn98y7i5skj1ify41hmb0yhkx2xrli8027b9";
+in stdenv.mkDerivation rec {
+  name = "update-resolv-conf-2016-09-30";
+
+  src = fetchFromGitHub {
+    owner = "masterkorp";
+    repo = "openvpn-update-resolv-conf";
+    rev = "09cb5ab5a50dfd6e77e852749d80bef52d7a6b34";
+    sha256 = "0s5cilph0p0wiixj7nlc7f3hqmr1mhvbfyapd0060n3y6xgps9y9";
   };
 
   nativeBuildInputs = [ makeWrapper ];
 
   installPhase = ''
     install -Dm555 update-resolv-conf.sh $out/libexec/openvpn/update-resolv-conf
-    sed -i 's,^\(RESOLVCONF=\).*,\1resolvconf,' $out/libexec/openvpn/update-resolv-conf
+    install -Dm555 update-systemd-network.sh $out/libexec/openvpn/update-systemd-network
 
-    wrapProgram $out/libexec/openvpn/update-resolv-conf \
-        --prefix PATH : ${coreutils}/bin:${openresolv}/sbin
+    for i in $out/libexec/openvpn/*; do
+      wrapProgram $i --prefix PATH : ${binPath}
+    done
   '';
 
   meta = with stdenv.lib; {
     description = "Script to update your /etc/resolv.conf with DNS settings that come from the received push dhcp-options";
-    homepage = https://github.com/masterkorp/openvpn-update-resolv-conf/;
+    homepage = "https://github.com/masterkorp/openvpn-update-resolv-conf/";
     maintainers = with maintainers; [ abbradar ];
     license = licenses.gpl2;
     platforms = platforms.unix;

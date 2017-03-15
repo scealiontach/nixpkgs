@@ -2,30 +2,34 @@
 , systemd, libgudev, libnl, libuuid, polkit, gnutls, ppp, dhcp, iptables
 , libgcrypt, dnsmasq, bluez5, readline
 , gobjectIntrospection, modemmanager, openresolv, libndp, newt, libsoup
-, ethtool, gnused, coreutils, file, inetutils }:
+, ethtool, gnused, coreutils, file, inetutils, kmod }:
 
 stdenv.mkDerivation rec {
   name    = "network-manager-${version}";
   pname   = "NetworkManager";
-  major   = "1.2";
-  version = "${major}.2";
+  major   = "1.4";
+  version = "${major}.4";
 
   src = fetchurl {
     url    = "mirror://gnome/sources/${pname}/${major}/${pname}-${version}.tar.xz";
-    sha256 = "41d8082e027f58bb5fa4181f93742606ab99c659794a18e2823eff22df0eecd9";
+    sha256 = "029k2f1arx1m5hppmr778i9yg34jj68nmji3i89qs06c33rpi4w2";
   };
+
+  outputs = [ "out" "dev" ];
 
   preConfigure = ''
     substituteInPlace configure --replace /usr/bin/uname ${coreutils}/bin/uname
     substituteInPlace configure --replace /usr/bin/file ${file}/bin/file
     substituteInPlace src/devices/nm-device.c --replace /usr/bin/ping ${inetutils}/bin/ping
-    substituteInPlace src/NetworkManagerUtils.c --replace /sbin/modprobe /run/current-system/sw/sbin/modprobe
+    substituteInPlace src/NetworkManagerUtils.c --replace /sbin/modprobe ${kmod}/bin/modprobe
     substituteInPlace data/84-nm-drivers.rules \
       --replace /bin/sh ${stdenv.shell}
     substituteInPlace data/85-nm-unmanaged.rules \
       --replace /bin/sh ${stdenv.shell} \
       --replace /usr/sbin/ethtool ${ethtool}/sbin/ethtool \
       --replace /bin/sed ${gnused}/bin/sed
+    substituteInPlace data/NetworkManager.service.in \
+      --replace /bin/kill ${coreutils}/bin/kill
     # to enable link-local connections
     configureFlags="$configureFlags --with-udev-dir=$out/lib/udev"
   '';
@@ -53,6 +57,8 @@ stdenv.mkDerivation rec {
     "--with-nmtui"
     "--with-libsoup=yes"
   ];
+
+  patches = [ ./PppdPath.patch ];
 
   buildInputs = [ systemd libgudev libnl libuuid polkit ppp libndp
                   bluez5 dnsmasq gobjectIntrospection modemmanager readline newt libsoup ];

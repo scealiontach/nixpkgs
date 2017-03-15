@@ -1,11 +1,11 @@
 { stdenv, fetchurl }: let
-  version = "1.0.0";
+  version = "1.2.0";
 in stdenv.mkDerivation {
   name = "long-shebang-${version}";
 
   src = fetchurl {
-    url = "https://github.com/shlevy/long-shebang/releases/download/v1.0.0/long-shebang-1.0.0.tar.xz";
-    sha256 = "15f5rmihj3r53rmalix1bn1agybbzrc3g2a9xzjyd4v3vfd2vckr";
+    url = "https://github.com/shlevy/long-shebang/releases/download/v${version}/long-shebang-${version}.tar.xz";
+    sha256 = "10h29w1c5bm0rlscyjiz1kzb134rn92as6v4y7i8mhhmdh6mmf79";
   };
 
   meta = {

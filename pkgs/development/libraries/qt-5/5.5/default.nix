@@ -16,27 +16,30 @@
 
 */
 
-{ pkgs
+{
+  newScope,
+  stdenv, fetchurl, makeSetupHook, makeWrapper,
+  bison, cups ? null, harfbuzz, mesa, perl,
+  libgnomeui, GConf, gnome_vfs,
+  gstreamer, gst-plugins-base,
 
-# options
-, developerBuild ? false
-, decryptSslTraffic ? false
+  # options
+  developerBuild ? false,
+  decryptSslTraffic ? false,
 }:
-
-let inherit (pkgs) makeSetupHook makeWrapper stdenv; in
 
 with stdenv.lib;
 
 let
 
   mirror = "http://download.qt.io";
-  srcs = import ./srcs.nix { inherit mirror; inherit (pkgs) fetchurl; };
+  srcs = import ./srcs.nix { inherit mirror; inherit fetchurl; };
 
   qtSubmodule = args:
     let
       inherit (args) name;
       inherit (srcs."${args.name}") version src;
-      inherit (pkgs.stdenv) mkDerivation;
+      inherit (stdenv) mkDerivation;
     in mkDerivation (args // {
       name = "${name}-${version}";
       inherit src;
@@ -46,10 +49,10 @@ let
 
       NIX_QT_SUBMODULE = args.NIX_QT_SUBMODULE or true;
 
-      outputs = args.outputs or [ "dev" "out" ];
+      outputs = args.outputs or [ "out" "dev" ];
       setOutputFlags = args.setOutputFlags or false;
 
-      setupHook = ./setup-hook.sh;
+      setupHook = ../qtsubmodule-setup-hook.sh;
 
       enableParallelBuilding = args.enableParallelBuilding or true;
 
@@ -62,12 +65,9 @@ let
     in {
 
       qtbase = callPackage ./qtbase {
-        mesa = pkgs.mesa_noglu;
-        harfbuzz = pkgs.harfbuzz-icu;
-        cups = if stdenv.isLinux then pkgs.cups else null;
+        inherit bison cups harfbuzz mesa;
         # GNOME dependencies are not used unless gtkStyle == true
-        inherit (pkgs.gnome) libgnomeui GConf gnome_vfs;
-        bison = pkgs.bison2; # error: too few arguments to function 'int yylex(...
+        inherit libgnomeui GConf gnome_vfs;
         inherit developerBuild decryptSslTraffic;
       };
 
@@ -84,15 +84,16 @@ let
       qtlocation = callPackage ./qtlocation.nix {};
       /* qtmacextras = not packaged */
       qtmultimedia = callPackage ./qtmultimedia.nix {
-        inherit (pkgs.gst_all_1) gstreamer gst-plugins-base;
+        inherit gstreamer gst-plugins-base;
       };
       qtquick1 = callPackage ./qtquick1 {};
       qtquickcontrols = callPackage ./qtquickcontrols.nix {};
+      qtquickcontrols2 = null;
       qtscript = callPackage ./qtscript {};
       qtsensors = callPackage ./qtsensors.nix {};
       qtserialport = callPackage ./qtserialport {};
       qtsvg = callPackage ./qtsvg.nix {};
-      qttools = callPackage ./qttools.nix {};
+      qttools = callPackage ./qttools {};
       qttranslations = callPackage ./qttranslations.nix {};
       /* qtwayland = not packaged */
       /* qtwebchannel = not packaged */
@@ -112,11 +113,18 @@ let
         qtxmlpatterns
       ];
 
-      makeQtWrapper = makeSetupHook { deps = [ makeWrapper ]; } ./make-qt-wrapper.sh;
-      qmakeHook = makeSetupHook { substitutions = { qt_dev = qtbase.dev; lndir = pkgs.xorg.lndir; }; } ./qmake-hook.sh;
+      makeQtWrapper =
+        makeSetupHook
+        { deps = [ makeWrapper ]; }
+        ../make-qt-wrapper.sh;
+
+      qmakeHook =
+        makeSetupHook
+        { deps = [ self.qtbase.dev ]; }
+        ../qmake-hook.sh;
 
     };
 
-   self = makeScope pkgs.newScope addPackages;
+   self = makeScope newScope addPackages;
 
 in self

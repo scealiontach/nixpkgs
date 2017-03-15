@@ -22,14 +22,16 @@ stdenv.mkDerivation rec {
 
   # configure cannot find moc on its own
   preConfigure = ''
-    export QTDIR="${qtbase}"
-    export MOC="${qtbase}/bin/moc"
+    export QTDIR="${qtbase.dev}"
+    export MOC="${qtbase.dev}/bin/moc"
   '';
 
   configureFlags = [
     (mkWith   (libcap != null)  "libcap")
     (mkEnable true "pinentry-qt")
   ];
+
+  NIX_CFLAGS_COMPILE = [ "-std=c++11" ];
 
   nativeBuildInputs = [ pkgconfig ];
 

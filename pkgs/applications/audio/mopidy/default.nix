@@ -1,17 +1,17 @@
-{ stdenv, fetchFromGitHub, pythonPackages, pygobject3, wrapGAppsHook
+{ stdenv, fetchFromGitHub, pythonPackages, wrapGAppsHook
 , gst_all_1, glib_networking, gobjectIntrospection
 }:
 
 pythonPackages.buildPythonApplication rec {
   name = "mopidy-${version}";
 
-  version = "2.0.0";
+  version = "2.1.0";
 
   src = fetchFromGitHub {
     owner = "mopidy";
     repo = "mopidy";
     rev = "v${version}";
-    sha256 = "06f1y87dqc7p6kq5npmg3ki8x4iacyjzd7nq7188x20y2zglrjbm";
+    sha256 = "0krq5fbscqxayyc4vxai7iwxm2kdbgs5jicrdb013v04phw2za06";
   };
 
   nativeBuildInputs = [ wrapGAppsHook ];
@@ -22,7 +22,7 @@ pythonPackages.buildPythonApplication rec {
   ];
 
   propagatedBuildInputs = with pythonPackages; [
-    gst-python pygobject3 pykka tornado requests2 dbus
+    gst-python pygobject3 pykka tornado requests2 dbus-python
   ];
 
   # There are no tests

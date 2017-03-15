@@ -1,6 +1,6 @@
 { stdenv, fetchgit, fetchurl
 # build tools
-, gfortran, m4, makeWrapper, patchelf, perl, which, python2
+, gfortran, m4, makeWrapper, patchelf, perl, which, python2, paxctl
 # libjulia dependencies
 , libunwind, llvm, readline, utf8proc, zlib
 # standard library dependencies
@@ -48,12 +48,12 @@ in
 
 stdenv.mkDerivation rec {
   pname = "julia";
-  version = "0.4.5";
+  version = "0.4.7";
   name = "${pname}-${version}";
 
   src = fetchurl {
     url = "https://github.com/JuliaLang/${pname}/releases/download/v${version}/${name}.tar.gz";
-    sha256 = "09gc6yf3v4in0qwhrbgjrjgvblp941di0mli4zax22mvf4dzc7s4";
+    sha256 = "09f531jhs8pyd1xng5c26x994w7q0sxxr28mr3qfw9wpkbmsc2pf";
   };
 
   prePatch = ''
@@ -66,7 +66,7 @@ stdenv.mkDerivation rec {
     ./0001-use-system-utf8proc.patch
     ./0002-use-system-suitesparse.patch
     ./0003-no-ldconfig.patch
-  ];
+  ] ++ stdenv.lib.optional stdenv.needsPax ./0004-hardened-0.4.7.patch;
 
   postPatch = ''
     patchShebangs . contrib
@@ -74,12 +74,13 @@ stdenv.mkDerivation rec {
 
   buildInputs = [
     arpack fftw fftwSinglePrec gmp libgit2 libunwind llvmShared mpfr
-    pcre2 openblas openlibm openspecfun readline suitesparse utf8proc
+    pcre2.dev openblas openlibm openspecfun readline suitesparse utf8proc
     zlib
   ] ++
     stdenv.lib.optionals stdenv.isDarwin [CoreServices ApplicationServices] ;
 
-  nativeBuildInputs = [ curl gfortran m4 makeWrapper patchelf perl python2 which ];
+  nativeBuildInputs = [ curl gfortran m4 makeWrapper patchelf perl python2 which ]
+    ++ stdenv.lib.optional stdenv.needsPax paxctl;
 
   makeFlags =
     let
@@ -121,6 +122,8 @@ stdenv.mkDerivation rec {
       "USE_SYSTEM_OPENSPECFUN=1"
       "USE_SYSTEM_PATCHELF=1"
       "USE_SYSTEM_PCRE=1"
+      "PCRE_CONFIG=${pcre2.dev}/bin/pcre2-config"
+      "PCRE_INCL_PATH=${pcre2.dev}/include/pcre2.h"
       "USE_SYSTEM_READLINE=1"
       "USE_SYSTEM_UTF8PROC=1"
       "USE_SYSTEM_ZLIB=1"
@@ -151,7 +154,7 @@ stdenv.mkDerivation rec {
     for prog in "$out/bin/julia" "$out/bin/julia-debug"; do
         wrapProgram "$prog" \
             --prefix LD_LIBRARY_PATH : "$LD_LIBRARY_PATH" \
-            --prefix PATH : "${curl}/bin"
+            --prefix PATH : "${stdenv.lib.makeBinPath [ curl ]}"
     done
   '';
 
@@ -161,5 +164,6 @@ stdenv.mkDerivation rec {
     license = stdenv.lib.licenses.mit;
     maintainers = with stdenv.lib.maintainers; [ raskin ];
     platforms = [ "i686-linux" "x86_64-linux" "x86_64-darwin" ];
+    broken = stdenv.isi686;
   };
 }

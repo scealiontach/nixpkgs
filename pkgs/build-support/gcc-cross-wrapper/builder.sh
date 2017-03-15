@@ -7,8 +7,8 @@ mkdir $out/nix-support
 # Force gcc to use ld-wrapper.sh when calling ld.
 cflagsCompile="-B$out/bin/"
 
-if test -z "$nativeLibc"; then
-    cflagsCompile="$cflagsCompile -B$gccLibs/lib -B$libc/lib/ -isystem $libc/include"
+if test -z "$nativeLibc" -a -n "$libc"; then
+    cflagsCompile="$cflagsCompile -B$gccLibs/lib -B$libc/lib/ -isystem $libc_dev/include"
     ldflags="$ldflags -L$libc/lib"
     # Get the proper dynamic linker for glibc and uclibc. 
     dlinker=`eval 'echo $libc/lib/ld*.so.?'`

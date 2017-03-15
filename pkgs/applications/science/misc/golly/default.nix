@@ -1,16 +1,16 @@
-{stdenv, fetchurl, wxGTK, perl, python, zlib}:
+{stdenv, fetchurl, wxGTK, perl, python2, zlib, mesa, libX11}:
 let
   s = # Generated upstream information
   rec {
     baseName="golly";
-    version="2.7";
+    version="2.8";
     name="${baseName}-${version}";
-    hash="0wfr9dhdbwg2cbcl7g2s1h9pmsm1lkjncbs9m0df82bcw516xs2f";
-    url="mirror://sourceforge/project/golly/golly/golly-2.7/golly-2.7-src.tar.gz";
-    sha256="0wfr9dhdbwg2cbcl7g2s1h9pmsm1lkjncbs9m0df82bcw516xs2f";
+    hash="0a4vn2hm7h4b47v2iwip1z3n9y8isf79v08aipl2iqms2m3p5204";
+    url="mirror://sourceforge/project/golly/golly/golly-2.8/golly-2.8-src.tar.gz";
+    sha256="0a4vn2hm7h4b47v2iwip1z3n9y8isf79v08aipl2iqms2m3p5204";
   };
   buildInputs = [
-    wxGTK perl python zlib
+    wxGTK perl python2 zlib mesa libX11
   ];
 in
 stdenv.mkDerivation rec {
@@ -26,12 +26,12 @@ stdenv.mkDerivation rec {
   makeFlags=[
     "AM_LDFLAGS="
   ];
-  NIX_LDFLAGS="-lpython${python.majorVersion} -lperl";
+  NIX_LDFLAGS="-lpython${python2.majorVersion} -lperl";
   preConfigure=''
     export NIX_LDFLAGS="$NIX_LDFLAGS -L$(dirname "$(find ${perl} -name libperl.so)")"
     export NIX_CFLAGS_COMPILE="$NIX_CFLAGS_COMPILE
       -DPYTHON_SHLIB=$(basename "$(
-        readlink -f ${python}/lib/libpython*.so)")"
+        readlink -f ${python2}/lib/libpython*.so)")"
   '';
 
   meta = {

@@ -2,7 +2,7 @@
 , cross ? null, gold ? true, bison ? null
 }:
 
-let basename = "binutils-2.26.1"; in
+let basename = "binutils-2.27"; in
 
 with { inherit (stdenv.lib) optional optionals optionalString; };
 
@@ -11,7 +11,7 @@ stdenv.mkDerivation rec {
 
   src = fetchurl {
     url = "mirror://gnu/binutils/${basename}.tar.bz2";
-    sha256 = "1n4zjibdvqwz63kkzkjdqdp1nh993pn0lml6yyr19yx4gb44dhrr";
+    sha256 = "125clslv17xh1sab74343fg6v31msavpmaa1c1394zsqa773g5rn";
   };
 
   patches = [
@@ -32,14 +32,26 @@ stdenv.mkDerivation rec {
     # This is needed, for instance, so that running "ldd" on a binary that is
     # PaX-marked to disable mprotect doesn't fail with permission denied.
     ./pt-pax-flags.patch
+
+    # Bfd looks in BINDIR/../lib for some plugins that don't
+    # exist. This is pointless (since users can't install plugins
+    # there) and causes a cycle between the lib and bin outputs, so
+    # get rid of it.
+    ./no-plugins.patch
   ];
 
-  outputs = (optional (cross == null) "dev") ++ [ "out" "info" ];
+  outputs = [ "out" ]
+    ++ optional (cross == null && !stdenv.isDarwin) "lib" # problems in Darwin stdenv
+    ++ [ "info" ]
+    ++ optional (cross == null) "dev";
 
   nativeBuildInputs = [ bison ];
   buildInputs = [ zlib ];
 
   inherit noSysDirs;
+
+  # FIXME needs gcc 4.9 in bootstrap tools
+  hardeningDisable = [ "stackprotector" ];
 
   preConfigure = ''
     # Clear the default library search path.
@@ -68,8 +80,6 @@ stdenv.mkDerivation rec {
     ++ optional (stdenv.system == "i686-linux") "--enable-targets=x86_64-linux-gnu";
 
   enableParallelBuilding = true;
-
-  postFixup = optionalString (cross == null) "ln -s $out/bin $dev/bin"; # tools needed for development
 
   meta = with stdenv.lib; {
     description = "Tools for manipulating binaries (linker, assembler, etc.)";

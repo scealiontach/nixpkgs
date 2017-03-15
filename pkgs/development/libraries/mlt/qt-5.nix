@@ -1,19 +1,21 @@
 { stdenv, fetchurl, SDL, ffmpeg, frei0r, libjack2, libdv, libsamplerate
 , libvorbis, libxml2, makeWrapper, movit, pkgconfig, sox, qtbase, qtsvg
+, fftw, vid-stab, opencv3, ladspa-sdk
 }:
 
 stdenv.mkDerivation rec {
   name = "mlt-${version}";
-  version = "0.9.6";
+  version = "6.4.1";
 
   src = fetchurl {
     url = "https://github.com/mltframework/mlt/archive/v${version}.tar.gz";
-    sha256 = "0s8ypg0q50zfcmq527y8cbdvzxhiqidm1923k28ar8jqmjp45ssh";
+    sha256 = "10m3ry0b2pvqx3bk34qh5dq337nn8pkc2gzfyhsj4nv9abskln47";
   };
 
   buildInputs = [
     SDL ffmpeg frei0r libjack2 libdv libsamplerate libvorbis libxml2
-    makeWrapper movit pkgconfig qtbase qtsvg sox
+    makeWrapper movit pkgconfig qtbase qtsvg sox fftw vid-stab opencv3
+    ladspa-sdk
   ];
 
   # Mostly taken from:
@@ -23,11 +25,17 @@ stdenv.mkDerivation rec {
     "--enable-opengl"
   ];
 
+  CXXFLAGS = "-std=c++11";
+
   enableParallelBuilding = true;
 
   postInstall = ''
     wrapProgram $out/bin/melt --prefix FREI0R_PATH : ${frei0r}/lib/frei0r-1
   '';
+
+  passthru = {
+    inherit ffmpeg;
+  };
 
   meta = with stdenv.lib; {
     description = "Open source multimedia framework, designed for television broadcasting";

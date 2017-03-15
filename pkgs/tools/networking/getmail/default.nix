@@ -1,16 +1,22 @@
-{ stdenv, fetchurl, buildPythonApplication }:
+{ stdenv, fetchurl, python2Packages }:
 
-buildPythonApplication rec {
-  version = "4.49.0";
+python2Packages.buildPythonApplication rec {
+  version = "4.54.0";
   name = "getmail-${version}";
   namePrefix = "";
 
   src = fetchurl {
     url = "http://pyropus.ca/software/getmail/old-versions/${name}.tar.gz";
-    sha256 = "1m0yzxd05fklwbmjj1n2q4sx397c1j5qi9a0r5fv3h8pplz4lv0w";
+    sha256 = "0r9s91zrdm6xklnj1fwzz74cxhkbmrgrrp86n62qgijkafa5fmnl";
   };
 
   doCheck = false;
+
+  postPatch = ''
+    # getmail spends a lot of effort to build an absolute path for
+    # documentation installation; too bad it is counterproductive now
+    sed -e '/datadir or prefix,/d' -i setup.py
+  '';
 
   meta = {
     description = "A program for retrieving mail";

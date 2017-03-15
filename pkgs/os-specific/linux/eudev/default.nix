@@ -3,10 +3,10 @@ let
   s = # Generated upstream information
   rec {
     baseName="eudev";
-    version = "3.1.5";
+    version = "3.2.1";
     name="${baseName}-${version}";
     url="http://dev.gentoo.org/~blueness/eudev/eudev-${version}.tar.gz";
-    sha256 = "0akg9gcc3c2p56xbhlvbybqavcprly5q0bvk655zwl6d62j8an7p";
+    sha256 = "06gyyl90n85x8i7lfhns514y1kg1ians13l467admyzy3kjxkqsp";
   };
   buildInputs = [
     glib pkgconfig gperf utillinux
@@ -18,6 +18,14 @@ stdenv.mkDerivation {
   src = fetchurl {
     inherit (s) url sha256;
   };
+  patches = [
+    (fetchurl {
+       # for new gperf
+       url = "https://github.com/gentoo/eudev/commit/5bab4d8de0dcbb8e2e7d4d5125b4aea1652a0d60.patch";
+       sha256 = "097pjmgq243mz3vfxndwmm37prmacgq2f4r4gb47whfkbd6syqcw";
+    })
+  ];
+
   configureFlags = [
     "--localstatedir=/var"
     "--sysconfdir=/etc"

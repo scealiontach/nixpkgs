@@ -12,11 +12,14 @@ let
     '';
   });
 
-  path = map getBin
-    [ pkgs.coreutils pkgs.gnugrep pkgs.findutils
-      pkgs.glibc # needed for getent
-      pkgs.shadow
-      pkgs.nettools # needed for hostname
+  path = with pkgs; map getBin
+    [ coreutils
+      gnugrep
+      findutils
+      glibc # needed for getent
+      shadow
+      nettools # needed for hostname
+      utillinux # needed for mount and mountpoint
     ];
 
 in
@@ -137,8 +140,14 @@ in
 
         mkdir -m 1777 -p /var/tmp
 
-        # Empty, read-only home directory of many system accounts.
-        mkdir -m 0555 -p /var/empty
+        # Empty, immutable home directory of many system accounts.
+        mkdir -p /var/empty
+        # Make sure it's really empty
+        ${pkgs.e2fsprogs}/bin/chattr -f -i /var/empty || true
+        find /var/empty -mindepth 1 -delete
+        chmod 0555 /var/empty
+        chown root:root /var/empty
+        ${pkgs.e2fsprogs}/bin/chattr -f +i /var/empty || true
       '';
 
     system.activationScripts.usrbinenv = if config.environment.usrbinenv != null
@@ -152,11 +161,22 @@ in
         rmdir --ignore-fail-on-non-empty /usr/bin /usr
       '';
 
-    system.activationScripts.tmpfs =
+    system.activationScripts.specialfs =
       ''
-        ${pkgs.utillinux}/bin/mount -o "remount,size=${config.boot.devSize}" none /dev
-        ${pkgs.utillinux}/bin/mount -o "remount,size=${config.boot.devShmSize}" none /dev/shm
-        ${pkgs.utillinux}/bin/mount -o "remount,size=${config.boot.runSize}" none /run
+        specialMount() {
+          local device="$1"
+          local mountPoint="$2"
+          local options="$3"
+          local fsType="$4"
+
+          if mountpoint -q "$mountPoint"; then
+            local options="remount,$options"
+          else
+            mkdir -m 0755 -p "$mountPoint"
+          fi
+          mount -t "$fsType" -o "$options" "$device" "$mountPoint"
+        }
+        source ${config.system.build.earlyMountScript}
       '';
 
   };

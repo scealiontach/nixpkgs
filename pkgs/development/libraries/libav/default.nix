@@ -26,8 +26,9 @@ with { inherit (stdenv.lib) optional optionals hasPrefix; };
 
 let
   result = {
-    libav_0_8 = libavFun "0.8.17" "31ace2daeb8c105deed9cd3476df47318d417714";
-    libav_11  = libavFun  "11.7"  "9f36d136ea353fc6e3826180fe126f52eca7fec4";
+    libav_0_8 = libavFun "0.8.20" "0c7a2417c3a01eb74072691bb93ce802ae1be08f";
+    libav_11  = libavFun  "11.8"  "d0e93f6b229ae46c49d13ec183b13cfee70a51f0";
+    libav_12  = libavFun "12"     "4ecde7274621c82a6882b7614d907b28de25cc4e";
   };
 
   libavFun = version : sha1 : stdenv.mkDerivation rec {
@@ -85,7 +86,7 @@ let
 
     enableParallelBuilding = true;
 
-    outputs = [ "dev" "out" "bin" ];
+    outputs = [ "bin" "dev" "out" ];
     setOutputFlags = false;
 
     # alltools to build smaller tools, incl. aviocat, ismindex, qt-faststart, etc.

@@ -5,13 +5,13 @@ with stdenv.lib;
 
 stdenv.mkDerivation rec {
   name = "libopenshot-audio-${version}";
-  version = "0.1.1";
+  version = "0.1.2";
 
   src = fetchFromGitHub {
     owner = "OpenShot";
     repo = "libopenshot-audio";
     rev = "v${version}";
-    sha256 = "0pgw7vzx3znglwm58187ybhg5maa13n4xcy5hrhzfsp8bqhrwkc7";
+    sha256 = "0dxyhnqkjc5y4hra8s17q9lafll6fx0pgibmmjznjm70whqcj8a6";
   };
 
   buildInputs = [
@@ -25,7 +25,7 @@ stdenv.mkDerivation rec {
     homepage = "http://openshot.org/";
     description = "Free, open-source video editor";
     license = licenses.gpl3Plus;
-    maintainers = [maintainers.tohl];
+    maintainers = [];
     platforms = platforms.linux;
   };
 }

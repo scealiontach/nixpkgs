@@ -1,20 +1,25 @@
-{ stdenv, fetchFromGitHub, ocaml, findlib, ncurses }:
+{ stdenv, fetchFromGitHub, ocaml, findlib, ncurses, buildOcaml }:
+let
+  version = "1.99.18-beta";
+in
+buildOcaml {
 
-let version = "1.99.16-beta"; in
-
-stdenv.mkDerivation {
-
-  name = "ocp-build-${version}";
+  name = "ocp-build";
+  inherit version;
 
   src = fetchFromGitHub {
     owner = "OCamlPro";
     repo = "ocp-build";
     rev = version;
-    sha256 = "1nkd7wlf1vrc4p20bs94vbkd970q2ag23csh9a897ka65rk08gvw";
+    sha256 = "14vzam8p1d2c5qxljrhsfppd8a3j9lxx8kzxlplwclkr2laar0ss";
   };
 
-  buildInputs = [ ocaml findlib ncurses ];
+  buildInputs = [ ocaml ];
+  propagatedBuildInputs = [ ncurses ];
   preInstall = "mkdir -p $out/bin";
+  preConfigure = ''
+  export configureFlags="$configureFlags --with-metadir=$OCAMLFIND_DESTDIR"
+  '';
 
   meta = with stdenv.lib; {
     homepage = http://www.typerex.org/ocp-build.html;

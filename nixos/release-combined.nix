@@ -4,7 +4,7 @@
 
 { nixpkgs ? { outPath = ./..; revCount = 56789; shortRev = "gfedcba"; }
 , stableBranch ? false
-, supportedSystems ? [ "x86_64-linux" "i686-linux" ]
+, supportedSystems ? [ "x86_64-linux" "i686-linux" "aarch64-linux" ]
 }:
 
 let
@@ -68,10 +68,11 @@ in rec {
         (all nixos.tests.boot.uefiCdrom)
         (all nixos.tests.boot.uefiUsb)
         (all nixos.tests.boot-stage1)
+        nixos.tests.hibernate.x86_64-linux # i686 is flaky, see #23107
         (all nixos.tests.ecryptfs)
         (all nixos.tests.ipv6)
         (all nixos.tests.i3wm)
-        (all nixos.tests.kde4)
+        (all nixos.tests.plasma5)
         #(all nixos.tests.lightdm)
         (all nixos.tests.login)
         (all nixos.tests.misc)
@@ -87,6 +88,7 @@ in rec {
         (all nixos.tests.networking.scripted.sit)
         (all nixos.tests.networking.scripted.vlan)
         (all nixos.tests.nfs3)
+        (all nixos.tests.nfs4)
         (all nixos.tests.openssh)
         (all nixos.tests.printing)
         (all nixos.tests.proxy)
